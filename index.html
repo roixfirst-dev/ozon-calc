@@ -212,7 +212,7 @@
     const state = {
       connected: false, scheme: 'FBO', categoryTypes: [], selectedType: null,
       tariff: null, tariffSource: 'базовые тарифы Ozon', products: [], rowSchemes: {},
-      apiOk: false,
+      apiOk: false, lastApiError: '',
     };
     let debounce = null;
 
@@ -296,7 +296,11 @@
       const ozonError = data.error != null || (data.code && data.message && !data.result && !data.items);
       const ok = res.ok && status >= 200 && status < 300 && !ozonError;
       state.apiOk = state.apiOk || ok;
-      return { ok, status, data: data.data ?? data.body ?? data, raw: data };
+      const normalizedData = data.data ?? data.body ?? data;
+      if (!ok) {
+        state.lastApiError = path + ': ' + (data.error || normalizedData?.message || normalizedData?.code || ('HTTP ' + status));
+      }
+      return { ok, status, data: normalizedData, raw: data };
     }
 
     function defaultTariff(vol, scheme, price) {
@@ -599,7 +603,7 @@
         price: num(price.price, price.marketing_price, price.min_price, row.price, row.marketing_price, row.min_price),
         tariffs: {
           FBO: {
-            commissionPct: num(commissions.sales_percent_fbo, commissions.commission_fbo, row.commission_fbo, row.sales_percent_fbo),
+            commissionPct: num(commissions.sales_percent_fbo, commissions.commission_fbo, commissions.sales_percent, row.commission_fbo, row.sales_percent_fbo, row.sales_percent),
             logistics: num(commissions.fbo_direct_flow_trans_max_amount, commissions.fbo_direct_flow_trans_min_amount, row.fbo_direct_flow_trans_max_amount),
             reverse: num(commissions.fbo_return_flow_amount, row.fbo_return_flow_amount),
             lastMile: num(commissions.fbo_deliv_to_customer_amount, row.fbo_deliv_to_customer_amount),
@@ -607,7 +611,7 @@
             apiExact: true,
           },
           FBS: {
-            commissionPct: num(commissions.sales_percent_fbs, commissions.commission_fbs, row.commission_fbs, row.sales_percent_fbs),
+            commissionPct: num(commissions.sales_percent_fbs, commissions.commission_fbs, commissions.sales_percent, row.commission_fbs, row.sales_percent_fbs, row.sales_percent),
             logistics: num(commissions.fbs_direct_flow_trans_max_amount, commissions.fbs_direct_flow_trans_min_amount, row.fbs_direct_flow_trans_max_amount),
             reverse: num(commissions.fbs_return_flow_amount, row.fbs_return_flow_amount),
             lastMile: num(commissions.fbs_deliv_to_customer_amount, row.fbs_deliv_to_customer_amount),
@@ -665,13 +669,15 @@
         const bodyV3 = { filter: { visibility: 'ALL' }, limit: 100 };
         if (lastId) bodyV3.last_id = lastId;
         let res = await apiPost('/v3/product/list', bodyV3);
-        if (!res.ok) {
+        let result = res.data?.result || res.data || {};
+        let items = result.items || [];
+        if (!res.ok || !items.length) {
           const bodyV2 = { filter: { visibility: 'ALL' }, limit: 100 };
           if (lastId) bodyV2.last_id = lastId;
           res = await apiPost('/v2/product/list', bodyV2);
+          result = res.data?.result || res.data || {};
+          items = result.items || [];
         }
-        const result = res.data?.result || res.data || {};
-        const items = result.items || [];
         all.push(...items);
         lastId = result.last_id || '';
         if (!res.ok || !items.length || !lastId || items.length < 100) break;
@@ -681,37 +687,48 @@
 
     async function enrichProductsFromApi(listItems) {
       const productIds = listItems.map((i) => i.product_id).filter(Boolean);
+      const offerIds = listItems.map((i) => i.offer_id).filter(Boolean);
       const infoByPid = new Map();
+      const infoByOffer = new Map();
       const priceByPid = new Map();
-      for (let i = 0; i < productIds.length; i += 100) {
-        const chunk = productIds.slice(i, i + 100);
-        const info = await apiPost('/v3/product/info/list', { product_id: chunk });
+      const priceByOffer = new Map();
+      const ids = productIds.length ? productIds : offerIds;
+      const idField = productIds.length ? 'product_id' : 'offer_id';
+      for (let i = 0; i < ids.length; i += 100) {
+        const chunk = ids.slice(i, i + 100);
+        const info = await apiPost('/v3/product/info/list', { [idField]: chunk });
         if (info.ok) {
           (info.data?.items || info.data?.result?.items || []).forEach((x) => {
             const pid = String(x.product_id || x.id);
-            infoByPid.set(pid, x);
+            const offer = String(x.offer_id || '');
+            if (pid && pid !== 'undefined') infoByPid.set(pid, x);
+            if (offer) infoByOffer.set(offer, x);
           });
         }
         let priceSource = '/v4/product/info/prices';
-        let pr = await apiPost(priceSource, { filter: { product_id: chunk, visibility: 'ALL' }, limit: 100 });
+        let pr = await apiPost(priceSource, { filter: { [idField]: chunk, visibility: 'ALL' }, limit: 100 });
         if (!pr.ok) {
           priceSource = '/v5/product/info/prices';
-          pr = await apiPost(priceSource, { filter: { product_id: chunk, visibility: 'ALL' }, limit: 100 });
+          pr = await apiPost(priceSource, { filter: { [idField]: chunk, visibility: 'ALL' }, limit: 100 });
         }
         if (pr.ok) {
           (pr.data?.items || pr.data?.result?.items || []).forEach((row) => {
             const pid = String(row.product_id);
+            const offer = String(row.offer_id || '');
             const parsed = parsePriceRow(row);
             parsed.tariffs.FBO.source = priceSource;
             parsed.tariffs.FBS.source = priceSource;
-            priceByPid.set(pid, parsed);
+            if (pid && pid !== 'undefined') priceByPid.set(pid, parsed);
+            if (offer) priceByOffer.set(offer, parsed);
           });
         }
       }
       return listItems.map((it) => {
         const pid = String(it.product_id);
-        const info = infoByPid.get(pid) || {};
-        const merged = { ...it, ...info, _parsedPrice: priceByPid.get(pid) };
+        const offer = String(it.offer_id || '');
+        const info = infoByPid.get(pid) || infoByOffer.get(offer) || {};
+        const parsed = priceByPid.get(pid) || priceByOffer.get(offer);
+        const merged = { ...it, ...info, _parsedPrice: parsed };
         return normalizeProduct(merged);
       });
     }
@@ -736,7 +753,7 @@
       if (!fromApi) {
         products = DEMO_PRODUCTS.map(normalizeProduct);
         if (state.connected) {
-          $('assortHint').textContent = 'API не вернул товары — показаны демо';
+          $('assortHint').textContent = 'API не вернул товары — показаны демо' + (state.lastApiError ? ' · ' + state.lastApiError : '');
         } else {
           $('assortHint').textContent = 'Демо-товары (подключите API)';
         }
@@ -746,14 +763,18 @@
     }
 
     async function loadAllData() {
-      const tree = await apiPost('/v1/description-category/tree', { language: 'RU' });
-      if (tree.ok) {
-        state.categoryTypes = flattenOzonTypes(tree.data?.result || tree.data?.categories || [], [])
-          .sort((a, b) => a.label.localeCompare(b.label, 'ru'));
-        initCategoryCombobox();
-      }
-      await fetchTariff();
-      recalc();
+      try {
+        const tree = await apiPost('/v1/description-category/tree', { language: 'RU' });
+        if (tree.ok) {
+          state.categoryTypes = flattenOzonTypes(tree.data?.result || tree.data?.categories || [], [])
+            .sort((a, b) => a.label.localeCompare(b.label, 'ru'));
+          initCategoryCombobox();
+        }
+      } catch (_) {}
+      try {
+        await fetchTariff();
+        recalc();
+      } catch (_) {}
       await loadAssortment();
     }
 
