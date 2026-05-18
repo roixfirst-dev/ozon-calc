@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Юнит-экономика Ozon 2026</title>
+  <title>FinSeller — карманный финансовый директор для продавца</title>
+  <link rel="icon" href="assets/finseller-icon.png" type="image/png" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -20,8 +21,22 @@
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
     .tab-btn.active { background: #005bff; color: #fff; border-color: #005bff; }
+    .dash-charts-panel {
+      background: linear-gradient(160deg, #1a1f27 0%, #12151a 55%, #0f1115 100%);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+    .dash-chart-card {
+      background: linear-gradient(145deg, rgba(38, 44, 54, 0.55) 0%, rgba(22, 26, 32, 0.9) 100%);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      border-radius: 1.25rem;
+      padding: 1rem 1.1rem 1.15rem;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+    .dash-chart-card__title { color: #e2e8f0; font-size: 0.875rem; font-weight: 600; margin-bottom: 0.75rem; }
     .dash-chart-wrap { position: relative; height: 260px; width: 100%; }
     @media (min-width: 1024px) { .dash-chart-wrap--tall { height: 300px; } }
+    .dash-chart-empty { color: #64748b; font-size: 0.8125rem; text-align: center; padding: 2.5rem 1rem; }
     .cat-option:hover, .cat-option.focus { background: #e8f1ff; }
     .cat-option[aria-selected="true"] { background: #005bff; color: #fff; }
   </style>
@@ -31,10 +46,10 @@
   <header class="border-b border-white/80 bg-white/90 shadow-sm backdrop-blur-md">
     <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-4">
       <div class="flex items-center gap-3">
-        <div class="flex h-11 w-11 items-center justify-center rounded-2xl bg-ozon text-lg font-bold text-white shadow-lg">O</div>
-        <div>
-          <h1 class="text-lg font-bold text-slate-900">Юнит-экономика Ozon 2026</h1>
-          <p class="text-xs text-slate-500">Калькулятор маржи и ROI</p>
+        <img src="assets/finseller-icon.png" alt="FinSeller" width="44" height="44" class="h-11 w-11 shrink-0 rounded-2xl object-cover shadow-lg ring-1 ring-slate-200/80" />
+        <div class="min-w-0">
+          <h1 class="text-base font-bold leading-tight text-slate-900 sm:text-lg">FinSeller — карманный финансовый директор для продавца</h1>
+          <p class="text-xs text-slate-500">Ozon · юнит-экономика · ассортимент · сводка ЛК</p>
         </div>
       </div>
       <div class="flex items-center gap-2">
@@ -252,23 +267,23 @@
         </div>
         <div id="dashKpis" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"></div>
         <div id="dashCompare" class="hidden rounded-2xl border border-blue-100 bg-blue-50/60 p-4 text-sm"></div>
-        <div class="rounded-2xl border border-slate-100 bg-white p-4 shadow-lg sm:p-5">
-          <h3 class="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-400">Диаграммы</h3>
-          <div class="grid gap-6 lg:grid-cols-2">
-            <div>
-              <p class="mb-2 text-sm font-medium text-slate-700">Выручка и заказы по дням</p>
+        <div class="dash-charts-panel rounded-2xl p-4 sm:p-6">
+          <h3 class="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Диаграммы</h3>
+          <div class="grid gap-4 lg:grid-cols-2 lg:gap-5">
+            <div class="dash-chart-card">
+              <p class="dash-chart-card__title">Выручка и заказы по дням</p>
               <div class="dash-chart-wrap dash-chart-wrap--tall"><canvas id="dashChartDaily" aria-label="График выручки и заказов по дням"></canvas></div>
             </div>
-            <div>
-              <p class="mb-2 text-sm font-medium text-slate-700">Структура расходов Ozon</p>
+            <div class="dash-chart-card">
+              <p class="dash-chart-card__title">Структура расходов Ozon</p>
               <div class="dash-chart-wrap"><canvas id="dashChartExpenses" aria-label="Диаграмма структуры расходов"></canvas></div>
             </div>
-            <div>
-              <p class="mb-2 text-sm font-medium text-slate-700">Текущий период vs предыдущий</p>
+            <div class="dash-chart-card">
+              <p class="dash-chart-card__title">Текущий период vs предыдущий</p>
               <div class="dash-chart-wrap dash-chart-wrap--tall"><canvas id="dashChartCompare" aria-label="Сравнение периодов"></canvas></div>
             </div>
-            <div>
-              <p class="mb-2 text-sm font-medium text-slate-700">Топ услуг Ozon</p>
+            <div class="dash-chart-card">
+              <p class="dash-chart-card__title">Топ услуг Ozon</p>
               <div class="dash-chart-wrap"><canvas id="dashChartServices" aria-label="Топ услуг Ozon"></canvas></div>
             </div>
           </div>
@@ -2415,7 +2430,8 @@
       }
       return [...map.values()].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
     }
-    const DASH_CHART_COLORS = ['#005bff', '#3b82f6', '#60a5fa', '#f97316', '#ef4444', '#a855f7', '#14b8a6', '#64748b'];
+    const CHART_NEON = ['#8b5cf6', '#2dd4bf', '#f472b6', '#2563eb', '#e5e7eb', '#a78bfa', '#22d3ee', '#fb923c'];
+    let dashChartsThemed = false;
 
     function destroyDashCharts() {
       const charts = state.dashboard.charts || {};
@@ -2426,22 +2442,87 @@
       }
       state.dashboard.charts = {};
     }
+    function initDashChartTheme() {
+      if (dashChartsThemed || typeof Chart === 'undefined') return;
+      Chart.defaults.color = '#94a3b8';
+      Chart.defaults.borderColor = 'rgba(255,255,255,0.06)';
+      Chart.defaults.font.family = 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+      dashChartsThemed = true;
+    }
     function chartTooltipLabel(ctx) {
       let v = ctx.parsed;
       if (v && typeof v === 'object') v = v.y ?? v.x ?? ctx.raw;
       const prefix = ctx.dataset?.label ? ctx.dataset.label + ': ' : '';
       return prefix + (typeof v === 'number' ? rub(v) : String(v ?? ''));
     }
+    function chartTooltipPlugin() {
+      return {
+        backgroundColor: 'rgba(22, 26, 32, 0.96)',
+        titleColor: '#f1f5f9',
+        bodyColor: '#cbd5e1',
+        borderColor: 'rgba(255,255,255,0.12)',
+        borderWidth: 1,
+        padding: 12,
+        cornerRadius: 10,
+        displayColors: true,
+        callbacks: { label: chartTooltipLabel },
+      };
+    }
+    function chartLegendPlugin(extra) {
+      return {
+        position: 'bottom',
+        labels: {
+          color: '#94a3b8',
+          boxWidth: 10,
+          boxHeight: 10,
+          usePointStyle: true,
+          pointStyle: 'circle',
+          padding: 14,
+          font: { size: 11 },
+          ...(extra || {}),
+        },
+      };
+    }
+    function chartScaleDark(extra) {
+      return {
+        grid: { color: 'rgba(255,255,255,0.06)', drawBorder: false },
+        ticks: { color: '#64748b', font: { size: 10 } },
+        border: { display: false },
+        ...(extra || {}),
+      };
+    }
     function dashChartBaseOptions(extra) {
       return {
         responsive: true,
         maintainAspectRatio: false,
+        animation: { duration: 650, easing: 'easeOutQuart' },
         plugins: {
-          legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
-          tooltip: { callbacks: { label: chartTooltipLabel } },
+          legend: chartLegendPlugin(),
+          tooltip: chartTooltipPlugin(),
         },
         ...(extra || {}),
       };
+    }
+    function chartLinearGradient(chart, c1, c2, vertical) {
+      const { ctx, chartArea } = chart;
+      if (!chartArea) return c1;
+      const g = vertical
+        ? ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom)
+        : ctx.createLinearGradient(chartArea.left, 0, chartArea.right, 0);
+      g.addColorStop(0, c1);
+      g.addColorStop(1, c2);
+      return g;
+    }
+    function chartNeonFills(chart, count) {
+      return CHART_NEON.slice(0, count).map((hex, i) => {
+        const next = CHART_NEON[(i + 1) % CHART_NEON.length];
+        return chartLinearGradient(chart, hex, next, true);
+      });
+    }
+    function chartDonutColors(chart, count) {
+      return CHART_NEON.slice(0, count).map((hex, i) =>
+        chartLinearGradient(chart, hex, CHART_NEON[(i + 2) % CHART_NEON.length], true)
+      );
     }
     function financeExpenseSlices(totals) {
       const skip = new Set(['accruals_for_sale', 'compensation_amount', 'money_transfer']);
@@ -2462,6 +2543,7 @@
     function renderDashCharts(payload) {
       destroyDashCharts();
       if (typeof Chart === 'undefined') return;
+      initDashChartTheme();
       const cur = payload.current;
       const prev = payload.previous;
       const charts = state.dashboard.charts;
@@ -2478,32 +2560,38 @@
                 type: 'bar',
                 label: 'Выручка',
                 data: rows.map((r) => r.revenue),
-                backgroundColor: 'rgba(0, 91, 255, 0.78)',
-                borderRadius: 4,
+                backgroundColor: (ctx) => chartLinearGradient(ctx.chart, '#8b5cf6', '#2563eb', true),
+                borderRadius: 10,
+                borderSkipped: false,
+                barPercentage: 0.62,
                 yAxisID: 'y',
               },
               {
                 type: 'line',
                 label: 'Заказы, шт.',
                 data: rows.map((r) => r.units),
-                borderColor: '#14b8a6',
-                backgroundColor: 'rgba(20, 184, 166, 0.12)',
-                tension: 0.35,
-                pointRadius: 3,
+                borderColor: '#2dd4bf',
+                backgroundColor: (ctx) => chartLinearGradient(ctx.chart, 'rgba(45,212,191,0.35)', 'rgba(45,212,191,0)', true),
+                fill: true,
+                tension: 0.4,
+                borderWidth: 2.5,
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                pointBackgroundColor: '#2dd4bf',
+                pointBorderColor: '#12151a',
+                pointBorderWidth: 2,
                 yAxisID: 'y1',
               },
             ],
           },
           options: dashChartBaseOptions({
             scales: {
-              x: { grid: { display: false } },
-              y: {
+              x: chartScaleDark({ grid: { display: false } }),
+              y: chartScaleDark({
                 position: 'left',
-                ticks: {
-                  callback: (v) => (Math.abs(v) >= 1000 ? Math.round(v / 1000) + 'k' : v),
-                },
-              },
-              y1: { position: 'right', grid: { drawOnChartArea: false }, beginAtZero: true },
+                ticks: { callback: (v) => (Math.abs(v) >= 1000 ? Math.round(v / 1000) + 'k' : v) },
+              }),
+              y1: chartScaleDark({ position: 'right', grid: { drawOnChartArea: false }, beginAtZero: true }),
             },
           }),
         });
@@ -2512,16 +2600,27 @@
       const slices = financeExpenseSlices(cur.totals);
       const expEl = $('dashChartExpenses');
       if (expEl && slices.length) {
+        const n = slices.length;
         charts.expenses = new Chart(expEl, {
           type: 'doughnut',
           data: {
             labels: slices.map((s) => s.label),
             datasets: [{
               data: slices.map((s) => s.value),
-              backgroundColor: slices.map((_, i) => DASH_CHART_COLORS[i % DASH_CHART_COLORS.length]),
+              backgroundColor: (ctx) => chartDonutColors(ctx.chart, n)[ctx.dataIndex % n],
+              borderWidth: 0,
+              borderRadius: 14,
+              spacing: 5,
+              hoverOffset: 10,
             }],
           },
-          options: dashChartBaseOptions({ cutout: '58%' }),
+          options: dashChartBaseOptions({
+            cutout: '68%',
+            layout: { padding: 8 },
+            plugins: {
+              legend: chartLegendPlugin({ padding: 18 }),
+            },
+          }),
         });
       }
 
@@ -2547,12 +2646,29 @@
           data: {
             labels: cmpLabels,
             datasets: [
-              { label: 'Текущий период', data: curVals, backgroundColor: 'rgba(0, 91, 255, 0.85)', borderRadius: 4 },
-              { label: 'Предыдущий период', data: prevVals, backgroundColor: 'rgba(148, 163, 184, 0.8)', borderRadius: 4 },
+              {
+                label: 'Текущий период',
+                data: curVals,
+                backgroundColor: (ctx) => chartLinearGradient(ctx.chart, '#8b5cf6', '#2563eb', false),
+                borderRadius: 10,
+                borderSkipped: false,
+                barPercentage: 0.72,
+              },
+              {
+                label: 'Предыдущий период',
+                data: prevVals,
+                backgroundColor: (ctx) => chartLinearGradient(ctx.chart, '#64748b', '#334155', false),
+                borderRadius: 10,
+                borderSkipped: false,
+                barPercentage: 0.72,
+              },
             ],
           },
           options: dashChartBaseOptions({
-            scales: { x: { grid: { display: false } }, y: { beginAtZero: true } },
+            scales: {
+              x: chartScaleDark({ grid: { display: false } }),
+              y: chartScaleDark({ beginAtZero: true }),
+            },
           }),
         });
       }
@@ -2560,6 +2676,7 @@
       const topSvc = (cur.services || []).slice(0, 8);
       const svcEl = $('dashChartServices');
       if (svcEl && topSvc.length) {
+        const n = topSvc.length;
         charts.services = new Chart(svcEl, {
           type: 'bar',
           data: {
@@ -2567,16 +2684,19 @@
             datasets: [{
               label: 'Сумма',
               data: topSvc.map(([, price]) => Math.abs(price)),
-              backgroundColor: topSvc.map((_, i) => DASH_CHART_COLORS[i % DASH_CHART_COLORS.length]),
+              backgroundColor: (ctx) => chartNeonFills(ctx.chart, n)[ctx.dataIndex % n],
+              borderRadius: 10,
+              borderSkipped: false,
+              barPercentage: 0.65,
             }],
           },
           options: dashChartBaseOptions({
             indexAxis: 'y',
-            plugins: {
-              legend: { display: false },
-              tooltip: { callbacks: { label: chartTooltipLabel } },
+            plugins: { legend: { display: false }, tooltip: chartTooltipPlugin() },
+            scales: {
+              x: chartScaleDark({ beginAtZero: true }),
+              y: chartScaleDark({ grid: { display: false } }),
             },
-            scales: { x: { beginAtZero: true }, y: { grid: { display: false } } },
           }),
         });
       }
