@@ -115,6 +115,10 @@
               <input id="tax" type="number" min="0" max="30" step="0.1" value="6" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" />
             </label>
           </div>
+          <label class="block text-sm">
+            <span class="text-slate-500">НДС, %</span>
+            <input id="vatRate" type="number" min="0" max="30" step="0.1" value="0" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" placeholder="0 — если не платите" />
+          </label>
           <label class="block text-sm"><div class="flex justify-between"><span>ДРР по умолчанию, %</span><span id="mktVal">8</span></div><input id="marketing" type="range" min="0" max="80" value="8" class="mt-1 w-full" /></label>
 
           <details class="rounded-xl border border-slate-100 bg-slate-50/80 p-3">
@@ -173,11 +177,6 @@
           <span class="sr-only">Поиск по названию</span>
           <input id="assortSearch" type="search" autocomplete="off" placeholder="Поиск по названию или артикулу…" class="w-full max-w-md rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-ozon focus:outline-none focus:ring-2 focus:ring-ozon/20" />
         </label>
-        <div class="mb-4 rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-950">
-          <p class="font-semibold">Таблица комиссий Ozon 2026</p>
-          <p id="commissionHint" class="mt-1 text-xs text-blue-800">Таблица комиссий загружается через Apps Script из вашей Google-таблицы (без публикации в интернет).</p>
-        </div>
-        <div id="apiDebug" class="mb-4 hidden rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs text-slate-600"></div>
         <div class="overflow-x-auto">
           <table class="w-full min-w-[1350px] text-left text-sm">
             <thead class="border-b border-slate-100 text-xs uppercase text-slate-500">
@@ -214,6 +213,7 @@
     const LS_KEY = 'ozon_ue_api_key';
     const LS_TAX_SYSTEM = 'ozon_ue_tax_system';
     const LS_TAX_RATE = 'ozon_ue_tax_rate';
+    const LS_VAT_RATE = 'ozon_ue_vat_rate';
     const LS_COMMISSION_TABLE = 'ozon_ue_commission_table_2026';
     const COMMISSION_SHEET_ID = '1Kh31uRcKJJ5SU-TZHBtsBlZ4W4SH9QzT1eJA78dcBtY';
     const COMMISSION_TABLE_URL = 'unit.xlsx';
@@ -353,23 +353,7 @@
       renderApiDebug();
     }
 
-    function renderApiDebug() {
-      const box = $('apiDebug');
-      if (!box) return;
-      if (!state.apiLog.length) {
-        box.classList.add('hidden');
-        return;
-      }
-      box.classList.remove('hidden');
-      box.innerHTML =
-        '<div class="mb-2 font-semibold text-slate-700">Журнал API Ozon</div>' +
-        state.apiLog.map((x) =>
-          '<div class="flex flex-wrap justify-between gap-2 border-t border-slate-200 py-1 first:border-t-0">' +
-          '<span class="' + (x.ok ? 'text-emerald-700' : 'text-red-700') + '">' + escapeHtml(x.path) + '</span>' +
-          '<span>HTTP ' + x.status + ' · ' + escapeHtml(x.message) + '</span>' +
-          '</div>'
-        ).join('');
-    }
+    function renderApiDebug() {}
 
     function extractItems(data) {
       const items = data?.items || data?.result?.items || [];
@@ -392,6 +376,7 @@
       const purchase = Number(opts.purchase) || 0;
       const extra = Number(opts.extra) || 0;
       const taxP = Number(opts.taxP ?? 6) || 0;
+      const vatP = Number(opts.vatP ?? 0) || 0;
       const taxSystem = opts.taxSystem || 'income';
       const mktP = Number(opts.mktP ?? 8) || 0;
       const loc = Number(opts.loc ?? 75) || 0;
@@ -415,7 +400,8 @@
       let taxAmt = price * (taxP / 100);
       if (taxSystem === 'profit') taxAmt = Math.max(0, baseBeforeTax) * (taxP / 100);
       if (taxSystem === 'vat') taxAmt = taxP > 0 ? price * (taxP / (100 + taxP)) : 0;
-      const ded = commAmt + logTotal + fbs + retCost + taxAmt + mktAmt;
+      const vatAmt = vatP > 0 ? price * (vatP / 100) : 0;
+      const ded = commAmt + logTotal + fbs + retCost + taxAmt + vatAmt + mktAmt;
       const costs = purchase + extra;
       const net = price - ded - costs;
       const margin = price > 0 ? (net / price) * 100 : 0;
@@ -425,7 +411,9 @@
         { t: apiExact ? 'Логистика API (магистраль + ПМ)' : 'Логистика (магистраль + ПМ)', v: logTotal },
       ];
       if (fbs) rows.push({ t: 'Обработка FBS', v: fbs });
-      rows.push({ t: 'Возвраты (' + retP + '%)', v: retCost }, { t: 'Реклама / ДРР (' + mktP + '%)', v: mktAmt }, { t: 'Налог (' + taxLabel(taxSystem) + ', ' + taxP + '%)', v: taxAmt }, { t: 'Себестоимость + прочее', v: costs, m: true });
+      rows.push({ t: 'Возвраты (' + retP + '%)', v: retCost }, { t: 'Реклама / ДРР (' + mktP + '%)', v: mktAmt }, { t: 'Налог (' + taxLabel(taxSystem) + ', ' + taxP + '%)', v: taxAmt });
+      if (vatAmt > 0) rows.push({ t: 'НДС (' + vatP + '%)', v: vatAmt });
+      rows.push({ t: 'Себестоимость + прочее', v: costs, m: true });
       return { net, margin, roi, rows, ded, costs, vol, mult, scheme, comm, footNote: scheme + ' · локализация ×' + mult.toFixed(2) + ' · ' + vol.toFixed(2) + ' л', tariff };
     }
 
@@ -603,6 +591,7 @@
         purchase: $('purchase').value,
         extra: $('extra').value,
         taxP: $('tax').value,
+        vatP: $('vatRate').value,
         taxSystem: $('taxSystem').value,
         mktP: $('marketing').value,
         loc: $('locIndex').value,
@@ -747,8 +736,8 @@
       const sellingPrice = actionPrice || regularPrice || 0;
 
       let source = 'обычная цена';
-      if (actionPrice && sellerAction && actionPrice === sellerAction) source = 'акционная цена продавца';
-      else if (actionPrice && lowestAction && actionPrice === lowestAction) source = 'акция продавца (кампания)';
+      if (actionPrice && sellerAction && actionPrice === sellerAction) source = 'цена в акции';
+      else if (actionPrice && lowestAction && actionPrice === lowestAction) source = 'цена в акции (кампания)';
 
       return {
         price: sellingPrice,
@@ -1045,21 +1034,7 @@
       return table;
     }
 
-    function updateCommissionHint() {
-      const el = $('commissionHint');
-      if (!el) return;
-      if (state.commissionTable?.count) {
-        const src = state.commissionTable.source === 'google-sheet'
-          ? 'Google Таблица'
-          : state.commissionTable.source === 'xlsx'
-            ? 'unit.xlsx'
-            : 'кэш';
-        const bands = state.commissionTable.bands?.length || 6;
-        el.textContent = 'Загружено строк: ' + state.commissionTable.count + ' (' + src + '), ' + bands + ' ценовых диапазонов. Комиссия по категории, типу и тестовой цене.';
-      } else {
-        el.textContent = 'Таблица не загружена — используются комиссии из API и базовые пороги.';
-      }
-    }
+    function updateCommissionHint() {}
 
     function loadCommissionTableFromStorage() {
       try {
@@ -1076,33 +1051,25 @@
     }
 
     async function loadCommissionTable() {
-      const hint = $('commissionHint');
       try {
-        if (hint) hint.textContent = 'Загружаю таблицу комиссий через Apps Script...';
         await loadCommissionFromGoogleSheet(true);
         return;
       } catch (sheetErr) {
         console.warn('Google Sheet commission load failed', sheetErr);
       }
       try {
-        if (hint) hint.textContent = 'Загружаю таблицу по публичной ссылке CSV…';
         await loadCommissionFromPublicCsv();
         return;
       } catch (csvErr) {
         console.warn('Public CSV commission load failed', csvErr);
       }
       try {
-        if (hint) hint.textContent = 'Загружаю unit.xlsx (запасной вариант)...';
         const res = await fetch(COMMISSION_TABLE_URL, { cache: 'no-store' });
         if (!res.ok) throw new Error('unit.xlsx не найден');
         await importCommissionBuffer(await res.arrayBuffer());
       } catch (err) {
         loadCommissionTableFromStorage();
-        if (hint && !state.commissionTable?.count) {
-          hint.textContent =
-            'Не удалось загрузить Google Таблицу через Apps Script. Обновите Code.gs и сделайте новый деплой. ' +
-            'Ошибка: ' + (err?.message || err);
-        }
+        if (!state.commissionTable?.count) console.warn('Commission table load failed', err);
       }
     }
 
@@ -1317,7 +1284,7 @@
       if (!fromApi) {
         if (state.connected) {
           products = [];
-          $('assortHint').textContent = 'API не вернул товары' + (state.lastApiError ? ' · ' + state.lastApiError : ' · смотрите журнал API ниже');
+          $('assortHint').textContent = 'API не вернул товары' + (state.lastApiError ? ' · ' + state.lastApiError : '');
         } else {
           products = DEMO_PRODUCTS.map(normalizeProduct);
           $('assortHint').textContent = 'Демо-товары (подключите API)';
@@ -1365,6 +1332,7 @@
         purchase,
         extra: Number($('extra')?.value) || 0,
         taxP: $('tax')?.value || 6,
+        vatP: $('vatRate')?.value || 0,
         taxSystem: $('taxSystem')?.value || 'income',
         mktP: adDrr,
         loc: $('locIndex')?.value || 75,
@@ -1415,7 +1383,7 @@
       const visible = filteredProducts();
       if (!state.products.length) {
         const tr = document.createElement('tr');
-        tr.innerHTML = '<td colspan="11" class="py-8 text-center text-sm text-slate-500">Товары не получены. Проверьте журнал API выше: там будет точный метод, HTTP-статус и ошибка Ozon.</td>';
+        tr.innerHTML = '<td colspan="11" class="py-8 text-center text-sm text-slate-500">Товары не получены. Проверьте ключи API и нажмите «Подключить».</td>';
         tbody.appendChild(tr);
         return;
       }
@@ -1435,13 +1403,13 @@
           ? "<img src=\"" + escapeHtml(p.image) + "\" alt=\"\" loading=\"lazy\" class=\"h-12 w-12 rounded-lg object-cover bg-slate-100\" onerror=\"this.style.display='none'\" />"
           : '<div class="flex h-12 w-12 items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-400">нет фото</div>';
         const tr = document.createElement('tr');
-        tr.className = 'border-b align-middle ' + (p.isPromo ? 'border-slate-50' : 'border-amber-100 bg-amber-50/50');
+        tr.className = 'border-b align-middle ' + (p.isPromo ? 'bg-emerald-50/40 border-emerald-100' : 'border-slate-50');
         const testPriceNum = Number(savedTest) || p.price;
         const tableComm = commissionFromTable(p, scheme, testPriceNum);
         const tableMatched = tableComm != null;
         const priceBadge = p.isPromo
-          ? '<span class="mt-1 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">акция продавца</span>'
-          : '<span class="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">без акции</span>';
+          ? '<span class="mt-1 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">в акции</span>'
+          : '<span class="mt-1 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">обычная цена</span>';
         const priceCell = '<div class="font-medium text-slate-700">' + rub(p.price) + '</div>' +
           (p.isPromo && p.basePrice ? '<div class="text-xs text-slate-400 line-through">' + rub(p.basePrice) + '</div>' : '') +
           '<div class="text-[11px] text-slate-400">' + escapeHtml(p.priceSource || '') + '</div>' +
@@ -1450,11 +1418,11 @@
           '<td class="py-3 pr-3 text-xs text-slate-600">' +
           '<div class="font-medium ' + (tableMatched ? 'text-emerald-700' : '') + '">' + pct(tableComm ?? p.tariffs?.[scheme]?.commissionPct) + '</div>' +
           '<div class="text-slate-400">' + (tableMatched ? 'таблица 2026 · ' + scheme : 'порог / API') + '</div>' +
-          '</div></td>';
+          '</td>';
         tr.innerHTML =
           '<td class="py-3 pr-3"><div class="flex min-w-[260px] items-center gap-3">' + imageHtml + '<div><div class="font-medium">' + escapeHtml(p.name) + '</div><div class="text-xs text-slate-400">' + escapeHtml(oid) + '</div><div class="text-[11px] text-slate-400">' + escapeHtml([p.categoryName, p.typeName].filter(Boolean).join(' › ')) + '</div><div class="text-[11px] text-slate-400" data-tariff-source="' + oid + '">—</div></div></div></td>' +
           '<td class="py-3 pr-3 text-slate-600">' + (Number.isFinite(p.stock) ? p.stock : '—') + '</td>' +
-          '<td class="py-3 pr-3 text-xs text-slate-600"><div>FBO: ' + pct(p.tariffs?.FBO?.commissionPct) + '</div><div>FBS: ' + pct(p.tariffs?.FBS?.commissionPct) + '</div><div class="' + (tableMatched ? 'text-emerald-600' : 'text-slate-400') + '">' + (tableMatched ? 'таблица 2026' : 'API/порог') + '</div></td>' +
+          commissionCell +
           '<td class="py-3 pr-3"><input data-cost="' + oid + '" type="number" min="0" value="' + savedCost + '" placeholder="0" class="w-24 rounded border border-slate-200 px-2 py-1" /></td>' +
           '<td class="py-3 pr-3 text-slate-600">' + priceCell + '</td>' +
           '<td class="py-3 pr-3"><input data-test-price="' + oid + '" type="number" min="0" value="' + savedTest + '" class="w-24 rounded border border-slate-200 px-2 py-1" /></td>' +
@@ -1594,7 +1562,7 @@
 
     function bind() {
       initTabs();
-      'len,wid,hei,weight,purchase,extra,price,priceRange,tax,marketing,locIndex,returns,premium'.split(',').forEach((id) => {
+      'len,wid,hei,weight,purchase,extra,price,priceRange,tax,vatRate,marketing,locIndex,returns,premium'.split(',').forEach((id) => {
         const el = $(id);
         if (!el) return;
         el.addEventListener('input', () => {
@@ -1603,11 +1571,12 @@
           if (id === 'marketing') $('mktVal').textContent = el.value;
           if (id === 'locIndex') $('locVal').textContent = el.value;
           if (id === 'returns') $('retVal').textContent = el.value;
-          if (['len', 'wid', 'hei', 'weight', 'price'].includes(id)) schedule();
+          if (['len', 'wid', 'hei', 'weight', 'price', 'priceRange'].includes(id)) schedule();
           else {
             if (id === 'tax') localStorage.setItem(LS_TAX_RATE, el.value);
+            if (id === 'vatRate') localStorage.setItem(LS_VAT_RATE, el.value);
             recalc();
-            if (['tax', 'marketing', 'locIndex', 'returns', 'extra'].includes(id)) {
+            if (['tax', 'vatRate', 'marketing', 'locIndex', 'returns', 'extra'].includes(id)) {
               if (id === 'marketing') {
                 document.querySelectorAll('[data-ad-drr]').forEach((inp) => {
                   if (!localStorage.getItem('ad_drr_' + inp.dataset.adDrr)) inp.value = el.value;
@@ -1654,6 +1623,7 @@
         if (key) $('apiKey').value = key;
         $('taxSystem').value = localStorage.getItem(LS_TAX_SYSTEM) || 'income';
         $('tax').value = localStorage.getItem(LS_TAX_RATE) || ($('taxSystem').value === 'profit' ? '15' : $('taxSystem').value === 'vat' ? '20' : '6');
+        $('vatRate').value = localStorage.getItem(LS_VAT_RATE) ?? '0';
         state.tariff = defaultTariff(ceilL(30, 25, 8), 'FBO', 2490);
         bind();
         setScheme('FBO');
