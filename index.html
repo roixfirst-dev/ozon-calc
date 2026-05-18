@@ -713,21 +713,66 @@
 
     function sellerPriceInfo(row) {
       const price = row.price && typeof row.price === 'object' ? row.price : {};
-      const basePrice = num(price.price, row.price);
-      const sellerActionPrice = num(price.marketing_seller_price, row.marketing_seller_price);
-      const minSellerPrice = num(price.min_price, row.min_price);
-      const actionPrice = sellerActionPrice && (!basePrice || sellerActionPrice < basePrice) ? sellerActionPrice : null;
+      const marketing = row.marketing_actions || {};
+      const actions = Array.isArray(marketing.actions) ? marketing.actions : [];
+
+      const regularPrice = num(price.price, row.price);
+      const oldPrice = num(price.old_price, row.old_price);
+      const sellerAction = num(price.marketing_seller_price, row.marketing_seller_price);
+      const minPrice = num(price.min_price, row.min_price);
+
+      const actionFromList = actions
+        .map((a) => num(a.value, a.price, a.action_price))
+        .filter((n) => n != null && regularPrice && n < regularPrice);
+      const lowestAction = actionFromList.length ? Math.min(...actionFromList) : null;
+
+      const basePrice =
+        oldPrice && regularPrice && oldPrice > regularPrice ? oldPrice : (regularPrice || oldPrice || 0);
+
+      let actionPrice = null;
+      if (sellerAction && regularPrice && sellerAction < regularPrice) actionPrice = sellerAction;
+      else if (lowestAction) actionPrice = lowestAction;
+      else if (minPrice && regularPrice && minPrice < regularPrice) actionPrice = minPrice;
+
+      const isPromo = !!(
+        actionPrice ||
+        (oldPrice && regularPrice && oldPrice > regularPrice) ||
+        actions.length > 0
+      );
+
+      const sellingPrice = actionPrice || regularPrice || sellerAction || minPrice || 0;
+
+      let source = 'обычная цена';
+      if (actionPrice && sellerAction && actionPrice === sellerAction) source = 'акционная цена продавца';
+      else if (actionPrice && lowestAction && actionPrice === lowestAction) source = 'акция продавца (кампания)';
+      else if (oldPrice && regularPrice && oldPrice > regularPrice) source = 'скидка от зачёркнутой цены';
+      else if (actions.length) source = 'есть маркетинговые акции';
+
       return {
-        price: actionPrice || basePrice || sellerActionPrice || minSellerPrice || 0,
-        basePrice: basePrice || 0,
+        price: sellingPrice,
+        basePrice: basePrice || sellingPrice,
         actionPrice: actionPrice || 0,
-        isPromo: !!actionPrice,
-        source: actionPrice ? 'акционная цена продавца' : 'обычная цена',
+        isPromo,
+        source,
+      };
+    }
+
+    function mergeParsedPrice(prev, next) {
+      if (!next) return prev || null;
+      if (!prev) return next;
+      return {
+        price: next.price ?? prev.price,
+        basePrice: next.basePrice ?? prev.basePrice,
+        actionPrice: next.actionPrice ?? prev.actionPrice,
+        isPromo: next.isPromo != null ? next.isPromo : prev.isPromo,
+        priceSource: next.priceSource ?? prev.priceSource,
+        tariffs: mergeTariffs(next.tariffs, prev.tariffs),
       };
     }
     function parseInfoRow(row) {
       const commissions = row.commissions || row.commission || {};
-      if (!Object.keys(commissions).length) return null;
+      const hasPrice = row.price && typeof row.price === 'object';
+      if (!Object.keys(commissions).length && !hasPrice) return null;
       return parsePriceRow({ ...row, commissions });
     }
     function mergeTariffs(primary, secondary) {
@@ -755,21 +800,59 @@
         .trim();
     }
 
-    function priceBand(price) {
+    const DEFAULT_PRICE_BANDS = [
+      { min: 0, max: 100 },
+      { min: 100.01, max: 300 },
+      { min: 300.01, max: 1500 },
+      { min: 1500.01, max: 5000 },
+      { min: 5000.01, max: 10000 },
+      { min: 10000.01, max: Infinity },
+    ];
+
+    function parseBandFromHeader(text) {
+      const s = normalizeText(text);
+      if (!s) return null;
+      const nums = [...String(text).matchAll(/(\d[\d\s]*(?:[.,]\d+)?)/g)]
+        .map((m) => parseFloat(m[1].replace(/\s/g, '').replace(',', '.')))
+        .filter(Number.isFinite);
+      if (s.includes('свыше') || s.includes('более') || />\s*\d/.test(s)) {
+        return { min: nums[0] || 10000.01, max: Infinity };
+      }
+      if (s.includes('до') && nums[0]) return { min: 0, max: nums[0] };
+      if (nums.length >= 2) return { min: nums[0], max: nums[1] };
+      if (nums.length === 1) return { min: 0, max: nums[0] };
+      return null;
+    }
+
+    function priceBandIndex(table, price) {
       const p = Number(price) || 0;
-      if (p <= 100) return 0;
-      if (p <= 300) return 1;
-      if (p <= 1500) return 2;
-      if (p <= 5000) return 3;
-      if (p <= 10000) return 4;
-      return 5;
+      const bands = table?.bands?.length ? table.bands : DEFAULT_PRICE_BANDS;
+      for (let i = 0; i < bands.length; i++) {
+        const b = bands[i];
+        if (p >= b.min && p <= b.max) return i;
+      }
+      return bands.length - 1;
+    }
+
+    function schemeAtColumn(rows, headerRow, col) {
+      for (let r = headerRow - 1; r >= Math.max(0, headerRow - 3); r--) {
+        const label = normalizeText(rows[r]?.[col] || rows[r]?.[2] || '');
+        if (!label) continue;
+        if (label.includes('fbo') && label.includes('fresh')) return 'FBO_FRESH';
+        if (label.includes('rfbs')) return 'RFBS';
+        if (label.includes('fbs')) return 'FBS';
+        if (label.includes('fbo')) return 'FBO';
+      }
+      const offset = col - 2;
+      const block = Math.floor(offset / 6);
+      return ['FBO', 'FBO_FRESH', 'FBS', 'RFBS'][block] || 'FBO';
     }
 
     function commissionFromTable(product, scheme, price) {
       const table = state.commissionTable;
       if (!table || !product) return null;
-      const band = priceBand(price);
-      const schemeKey = scheme === 'FBS' ? 'FBS' : 'FBO';
+      const band = priceBandIndex(table, price);
+      const schemeKey = scheme === 'FBS' ? 'FBS' : scheme === 'RFBS' ? 'RFBS' : 'FBO';
       const category = normalizeText(product.commissionCategory || product.categoryName || '');
       const type = normalizeText(product.commissionType || product.typeName || '');
       const candidates = [];
@@ -779,6 +862,23 @@
         const row = table.rows[key];
         const pctValue = row?.[schemeKey]?.[band];
         if (Number.isFinite(pctValue)) return pctValue;
+      }
+      if (type) {
+        for (const key of Object.keys(table.rows)) {
+          if (!key.endsWith('|' + type) && !key.includes('|' + type)) continue;
+          const pctValue = table.rows[key]?.[schemeKey]?.[band];
+          if (Number.isFinite(pctValue)) return pctValue;
+        }
+        if (category) {
+          for (const key of Object.keys(table.rows)) {
+            const row = table.rows[key];
+            if (!key.includes(type)) continue;
+            const rowCat = normalizeText(row.category);
+            if (!rowCat.includes(category) && !category.includes(rowCat)) continue;
+            const pctValue = row[schemeKey]?.[band];
+            if (Number.isFinite(pctValue)) return pctValue;
+          }
+        }
       }
       return null;
     }
@@ -790,23 +890,74 @@
     }
 
     function parseCommissionRows(rows) {
-      const headerRow = rows.findIndex((r) => normalizeText(r[0]).includes('категория') && normalizeText(r[1]).includes('тип'));
+      const headerRow = rows.findIndex((r) => {
+        const c0 = normalizeText(r[0]);
+        const c1 = normalizeText(r[1]);
+        return c0.includes('категор') && (c1.includes('тип') || c1.includes('наимен'));
+      });
       if (headerRow < 0) throw new Error('Не нашёл колонки "Категория" и "Тип товара" в таблице комиссий');
+
+      const headerCells = rows[headerRow] || [];
+      const SCHEME_BLOCKS = ['FBO', 'FBO_FRESH', 'FBS', 'RFBS'];
+      const BAND_COUNT = 6;
+      const bands = [];
+      for (let b = 0; b < BAND_COUNT; b++) {
+        const band = parseBandFromHeader(headerCells[2 + b]);
+        if (band) bands.push(band);
+      }
+      const finalBands = bands.length >= 4 ? bands : DEFAULT_PRICE_BANDS;
+      const colScheme = [];
+      SCHEME_BLOCKS.forEach((scheme, blockIdx) => {
+        const start = 2 + blockIdx * BAND_COUNT;
+        for (let b = 0; b < BAND_COUNT; b++) {
+          colScheme.push({ col: start + b, scheme, bandIndex: b });
+        }
+      });
+
       const start = headerRow + 1;
-      const table = { rows: {}, count: 0, loadedAt: new Date().toISOString(), source: 'unknown' };
+      const table = {
+        rows: {},
+        count: 0,
+        loadedAt: new Date().toISOString(),
+        source: 'unknown',
+        bands: finalBands,
+        version: 2,
+      };
+
       for (let i = start; i < rows.length; i++) {
         const row = rows[i];
         const categoryRaw = row[0];
         const typeRaw = row[1];
         const category = normalizeText(categoryRaw);
         const type = normalizeText(typeRaw);
-        if (!category || !type) continue;
-        const fbo = row.slice(2, 8).map(parsePercentCell);
-        const fboFresh = row.slice(8, 14).map(parsePercentCell);
-        const fbs = row.slice(14, 20).map(parsePercentCell);
-        const rfbs = row.slice(20, 26).map(parsePercentCell);
-        if (!fbo.some(Number.isFinite) && !fbs.some(Number.isFinite)) continue;
-        const entry = { category: String(categoryRaw), type: String(typeRaw), FBO: fbo, FBO_FRESH: fboFresh, FBS: fbs, RFBS: rfbs };
+        if (!category || !type || category.includes('итог')) continue;
+
+        const entry = {
+          category: String(categoryRaw),
+          type: String(typeRaw),
+          FBO: [],
+          FBO_FRESH: [],
+          FBS: [],
+          RFBS: [],
+        };
+
+        if (colScheme.length) {
+          colScheme.forEach(({ col, scheme, bandIndex }) => {
+            const pct = parsePercentCell(row[col]);
+            if (!Number.isFinite(pct)) return;
+            if (!entry[scheme]) entry[scheme] = [];
+            entry[scheme][bandIndex] = pct;
+          });
+        } else {
+          entry.FBO = row.slice(2, 8).map(parsePercentCell);
+          entry.FBO_FRESH = row.slice(8, 14).map(parsePercentCell);
+          entry.FBS = row.slice(14, 20).map(parsePercentCell);
+          entry.RFBS = row.slice(20, 26).map(parsePercentCell);
+        }
+
+        if (!entry.FBO.some(Number.isFinite) && !entry.FBS.some(Number.isFinite) && !entry.RFBS.some(Number.isFinite)) {
+          continue;
+        }
         table.rows[category + '|' + type] = entry;
         if (!table.rows['*|' + type]) table.rows['*|' + type] = entry;
         table.count++;
@@ -836,10 +987,11 @@
       applyCommissionTable(parseCommissionWorkbook(wb));
     }
 
-    async function loadCommissionFromGoogleSheet() {
+    async function loadCommissionFromGoogleSheet(skipCache) {
       const result = await proxyCall({
         action: 'getCommissionSheet',
         spreadsheetId: COMMISSION_SHEET_ID,
+        skipCache: !!skipCache,
       });
       if (!result.ok) {
         throw new Error(result.error || result.raw?.error || ('HTTP ' + result.status));
@@ -864,7 +1016,8 @@
           : state.commissionTable.source === 'xlsx'
             ? 'unit.xlsx'
             : 'кэш';
-        el.textContent = 'Загружено строк комиссий: ' + state.commissionTable.count + ' (' + src + '). Проценты по категории, типу и тестовой цене.';
+        const bands = state.commissionTable.bands?.length || 6;
+        el.textContent = 'Загружено строк: ' + state.commissionTable.count + ' (' + src + '), ' + bands + ' ценовых диапазонов. Комиссия по категории, типу и тестовой цене.';
       } else {
         el.textContent = 'Таблица не загружена — используются комиссии из API и базовые пороги.';
       }
@@ -873,7 +1026,11 @@
     function loadCommissionTableFromStorage() {
       try {
         const raw = localStorage.getItem(LS_COMMISSION_TABLE);
-        if (raw) state.commissionTable = JSON.parse(raw);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed?.version >= 2 && parsed?.bands?.length) state.commissionTable = parsed;
+          else state.commissionTable = null;
+        }
       } catch (_) {
         state.commissionTable = null;
       }
@@ -884,7 +1041,7 @@
       const hint = $('commissionHint');
       try {
         if (hint) hint.textContent = 'Загружаю таблицу комиссий через Apps Script...';
-        await loadCommissionFromGoogleSheet();
+        await loadCommissionFromGoogleSheet(true);
         return;
       } catch (sheetErr) {
         console.warn('Google Sheet commission load failed', sheetErr);
@@ -1054,8 +1211,8 @@
             parsed.tariffs.FBS.source = priceSource;
             const prevPid = priceByPid.get(pid);
             const prevOffer = priceByOffer.get(offer);
-            if (pid && pid !== 'undefined') priceByPid.set(pid, { price: parsed.price ?? prevPid?.price, tariffs: mergeTariffs(parsed.tariffs, prevPid?.tariffs) });
-            if (offer) priceByOffer.set(offer, { price: parsed.price ?? prevOffer?.price, tariffs: mergeTariffs(parsed.tariffs, prevOffer?.tariffs) });
+            if (pid && pid !== 'undefined') priceByPid.set(pid, mergeParsedPrice(prevPid, parsed));
+            if (offer) priceByOffer.set(offer, mergeParsedPrice(prevOffer, parsed));
           });
         }
         if (productIds.length) {
@@ -1133,6 +1290,9 @@
             .sort((a, b) => a.label.localeCompare(b.label, 'ru'));
           initCategoryCombobox();
         }
+      } catch (_) {}
+      try {
+        await loadCommissionTable();
       } catch (_) {}
       try {
         await fetchTariff();
