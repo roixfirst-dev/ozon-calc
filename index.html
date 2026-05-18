@@ -198,7 +198,7 @@
   (function () {
     'use strict';
     const API = 'https://api-seller.ozon.ru';
-    const CORS_PROXY = 'https://script.google.com/macros/s/AKfycbxiGu0ql2B8Hua4r6AmhE38CrteI0BbONZehlSaaIBG5M7G9bOkO46ClfRhT9ZaK_e7/exec';
+    const CORS_PROXY = 'https://script.google.com/macros/s/PASTE_YOUR_DEPLOYMENT_ID/exec';
     const DEV_CLIENT_ID = 'fc6180d5-6e30-47c5-9644-f8b62d65f2ff';
     const DEV_API_KEY = 'b70a019cdf1abeeadd704eca27383fcc26865d8174945c7c4cf8f51ce82b86e2';
     const LS_CID = 'ozon_ue_client_id';
@@ -326,9 +326,10 @@
       let comm = tariff.commissionPct + (premium ? PREMIUM : 0);
       const commAmt = price * (comm / 100);
       const mult = locMult(loc);
-      const mag = tariff.logistics * mult;
-      const nonLoc = price * 0.08 * (100 - loc) / 100;
-      const lm = Math.min(LAST_MILE, tariff.lastMile ?? LAST_MILE);
+      const apiExact = !!tariff.apiExact;
+      const mag = apiExact ? Number(tariff.logistics || 0) : tariff.logistics * mult;
+      const nonLoc = apiExact ? 0 : price * 0.08 * (100 - loc) / 100;
+      const lm = apiExact ? Number(tariff.lastMile || 0) : Math.min(LAST_MILE, tariff.lastMile ?? LAST_MILE);
       const logTotal = mag + nonLoc + lm;
       const fbs = scheme === 'FBS' ? FBS_FEE : 0;
       const retCost = (retP / 100) * (tariff.reverse ?? mag * 0.5);
@@ -344,7 +345,7 @@
       const roi = costs > 0 ? (net / costs) * 100 : 0;
       const rows = [
         { t: 'Комиссия Ozon (' + comm.toFixed(1) + '%)', v: commAmt },
-        { t: 'Логистика (магистраль + ПМ)', v: logTotal },
+        { t: apiExact ? 'Логистика API (магистраль + ПМ)' : 'Логистика (магистраль + ПМ)', v: logTotal },
       ];
       if (fbs) rows.push({ t: 'Обработка FBS', v: fbs });
       rows.push({ t: 'Возвраты (' + retP + '%)', v: retCost }, { t: 'Реклама / ДРР (' + mktP + '%)', v: mktAmt }, { t: 'Налог (' + taxLabel(taxSystem) + ', ' + taxP + '%)', v: taxAmt }, { t: 'Себестоимость + прочее', v: costs, m: true });
@@ -472,6 +473,7 @@
         logistics: Number(fbo ? c.fbo_direct_flow_trans_max_amount : c.fbs_direct_flow_trans_max_amount) || null,
         reverse: Number(fbo ? c.fbo_return_flow_amount : c.fbs_return_flow_amount) || null,
         lastMile: Number(fbo ? c.fbo_deliv_to_customer_amount : c.fbs_deliv_to_customer_amount) || null,
+        apiExact: true,
       };
     }
 
@@ -501,7 +503,7 @@
       }
       if (!t?.commissionPct) {
         try {
-          const list = await apiPost('/v3/product/list', { limit: 100, visibility: 'ALL' });
+          const list = await apiPost('/v3/product/list', { filter: { visibility: 'ALL' }, limit: 100 });
           const ids = (list.data?.result?.items || []).map((i) => i.product_id).filter(Boolean);
           if (list.ok && ids.length) {
             const pr = await apiPost('/v5/product/info/prices', { filter: { product_id: ids.slice(0, 15), visibility: 'ALL' }, limit: 15 });
@@ -517,6 +519,7 @@
         reverse: t?.reverse ?? d.reverse,
         lastMile: t?.lastMile ?? d.lastMile,
         source: t?.source ?? d.source,
+        apiExact: !!t?.apiExact,
       };
       state.tariffSource = state.tariff.source;
     }
@@ -597,17 +600,19 @@
         tariffs: {
           FBO: {
             commissionPct: num(commissions.sales_percent_fbo, commissions.commission_fbo, row.commission_fbo, row.sales_percent_fbo),
-            logistics: num(commissions.fbo_deliv_to_customer_amount, commissions.fbo_direct_flow_trans_max_amount, row.fbo_deliv_to_customer_amount),
+            logistics: num(commissions.fbo_direct_flow_trans_max_amount, commissions.fbo_direct_flow_trans_min_amount, row.fbo_direct_flow_trans_max_amount),
             reverse: num(commissions.fbo_return_flow_amount, row.fbo_return_flow_amount),
             lastMile: num(commissions.fbo_deliv_to_customer_amount, row.fbo_deliv_to_customer_amount),
             source: '/v4/product/info/prices',
+            apiExact: true,
           },
           FBS: {
             commissionPct: num(commissions.sales_percent_fbs, commissions.commission_fbs, row.commission_fbs, row.sales_percent_fbs),
-            logistics: num(commissions.fbs_deliv_to_customer_amount, commissions.fbs_direct_flow_trans_max_amount, row.fbs_deliv_to_customer_amount),
+            logistics: num(commissions.fbs_direct_flow_trans_max_amount, commissions.fbs_direct_flow_trans_min_amount, row.fbs_direct_flow_trans_max_amount),
             reverse: num(commissions.fbs_return_flow_amount, row.fbs_return_flow_amount),
             lastMile: num(commissions.fbs_deliv_to_customer_amount, row.fbs_deliv_to_customer_amount),
             source: '/v4/product/info/prices',
+            apiExact: true,
           },
         },
       };
@@ -621,6 +626,7 @@
         reverse: apiTariff.reverse ?? fallback.reverse,
         lastMile: apiTariff.lastMile ?? fallback.lastMile,
         source: apiTariff.source || fallback.source,
+        apiExact: !!apiTariff.apiExact,
       };
     }
 
@@ -656,7 +662,7 @@
       const all = [];
       let lastId = '';
       for (let page = 0; page < 30; page++) {
-        const bodyV3 = { limit: 100, visibility: 'ALL' };
+        const bodyV3 = { filter: { visibility: 'ALL' }, limit: 100 };
         if (lastId) bodyV3.last_id = lastId;
         let res = await apiPost('/v3/product/list', bodyV3);
         if (!res.ok) {
