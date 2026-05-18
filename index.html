@@ -284,20 +284,37 @@
     function proxyReady() {
       return /^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(CORS_PROXY) && !CORS_PROXY.includes('PASTE_');
     }
+    function parseProxyText(text) {
+      if (!text || typeof text !== 'string') return {};
+      const trimmed = text.trim();
+      if (trimmed.startsWith('<')) {
+        return {
+          error: 'Прокси вернул HTML вместо JSON. Переопубликуйте Apps Script (Deploy → New version) и откройте доступ «Anyone».',
+          raw: trimmed.slice(0, 200),
+        };
+      }
+      try {
+        return JSON.parse(trimmed);
+      } catch {
+        return { error: 'Некорректный ответ прокси', raw: trimmed.slice(0, 300) };
+      }
+    }
+
     async function proxyCall(payload) {
       if (!proxyReady()) {
         throw new Error('Укажите URL опубликованного Google Apps Script в CORS_PROXY');
       }
       const res = await fetch(CORS_PROXY, {
         method: 'POST',
+        mode: 'cors',
+        redirect: 'follow',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(payload),
       });
       const text = await res.text();
-      let data = {};
-      try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
+      const data = parseProxyText(text);
       const status = Number(data.status || data.statusCode || res.status);
-      const normalizedData = data.data ?? data.body ?? data;
+      const normalizedData = data.data ?? data.body ?? (data.error ? null : data);
       const errMsg = data.error || normalizedData?.error;
       const ok = res.ok && status >= 200 && status < 300 && !errMsg;
       return { ok, status, data: normalizedData, raw: data, error: errMsg };
@@ -1194,7 +1211,7 @@
         const savedDrr = localStorage.getItem('ad_drr_' + oid) ?? $('marketing').value;
         const scheme = getRowScheme(oid);
         const imageHtml = p.image
-          ? '<img src="' + escapeHtml(p.image) + '" alt="" loading="lazy" class="h-12 w-12 rounded-lg object-cover bg-slate-100" onerror="this.classList.add(\\'hidden\\')" />'
+          ? "<img src=\"" + escapeHtml(p.image) + "\" alt=\"\" loading=\"lazy\" class=\"h-12 w-12 rounded-lg object-cover bg-slate-100\" onerror=\"this.style.display='none'\" />"
           : '<div class="flex h-12 w-12 items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-400">нет фото</div>';
         const tr = document.createElement('tr');
         tr.className = 'border-b align-middle ' + (p.isPromo ? 'border-slate-50' : 'border-amber-100 bg-amber-50/50');
@@ -1251,6 +1268,16 @@
       return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
+    async function testOzonConnection() {
+      let result = await apiPost('/v1/seller/info', {});
+      if (result.ok) return result;
+      if (result.status === 401 || result.status === 403) return result;
+      if (result.status === 404 || result.status === 405) {
+        result = await apiPost('/v3/product/list', { filter: { visibility: 'ALL' }, limit: 1 });
+      }
+      return result;
+    }
+
     async function connect() {
       const cid = $('clientId').value.trim();
       const key = $('apiKey').value.trim();
@@ -1259,12 +1286,25 @@
       if (cid) localStorage.setItem(LS_CID, cid);
       if (key) localStorage.setItem(LS_KEY, key);
       $('authError').classList.add('hidden');
-      $('btnConnect').disabled = true;
+      const btn = $('btnConnect');
+      const btnLabel = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Подключение…';
       state.apiOk = false;
+      state.apiLog = [];
       try {
-        const { ok, status } = await apiPost('/v1/seller/info', {});
-        if (status === 401 || status === 403) { setStatus(false); showAuthError('Неверный Client-ID или API-Key'); return; }
-        if (!ok) { setStatus(false); showAuthError('Ошибка API: ' + status); return; }
+        const { ok, status, raw } = await testOzonConnection();
+        if (status === 401 || status === 403) {
+          setStatus(false);
+          showAuthError('Неверный Client-ID или API-Key');
+          return;
+        }
+        if (!ok) {
+          setStatus(false);
+          const detail = state.lastApiError || raw?.error || ('HTTP ' + status);
+          showAuthError('Не удалось подключиться: ' + detail);
+          return;
+        }
         setStatus(true);
         await loadAllData();
       } catch (e) {
@@ -1272,7 +1312,8 @@
         showAuthError(e?.message || String(e));
         await loadAssortment();
       } finally {
-        $('btnConnect').disabled = false;
+        btn.disabled = false;
+        btn.textContent = btnLabel;
       }
     }
 
@@ -1360,20 +1401,25 @@
     }
 
     async function init() {
-      const cid = localStorage.getItem(LS_CID);
-      const key = localStorage.getItem(LS_KEY);
-      if (cid) $('clientId').value = cid;
-      if (key) $('apiKey').value = key;
-      $('taxSystem').value = localStorage.getItem(LS_TAX_SYSTEM) || 'income';
-      $('tax').value = localStorage.getItem(LS_TAX_RATE) || ($('taxSystem').value === 'profit' ? '15' : $('taxSystem').value === 'vat' ? '20' : '6');
-      state.tariff = defaultTariff(ceilL(30, 25, 8), 'FBO', 2490);
-      bind();
-      await loadCommissionTable();
-      setScheme('FBO');
-      recalc();
-      await loadAssortment();
-      if (cid && key) await connect();
-      else schedule();
+      try {
+        const cid = localStorage.getItem(LS_CID);
+        const key = localStorage.getItem(LS_KEY);
+        if (cid) $('clientId').value = cid;
+        if (key) $('apiKey').value = key;
+        $('taxSystem').value = localStorage.getItem(LS_TAX_SYSTEM) || 'income';
+        $('tax').value = localStorage.getItem(LS_TAX_RATE) || ($('taxSystem').value === 'profit' ? '15' : $('taxSystem').value === 'vat' ? '20' : '6');
+        state.tariff = defaultTariff(ceilL(30, 25, 8), 'FBO', 2490);
+        bind();
+        setScheme('FBO');
+        recalc();
+        loadCommissionTable().catch(() => {});
+        await loadAssortment();
+        if (cid && key) await connect();
+        else schedule();
+      } catch (e) {
+        console.error(e);
+        showAuthError('Ошибка запуска: ' + (e?.message || e));
+      }
     }
     init();
   })();
