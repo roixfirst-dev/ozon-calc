@@ -193,6 +193,7 @@
               <tr>
                 <th class="py-2 pr-3">Товар</th>
                 <th class="py-2 pr-3">Остаток</th>
+                <th class="py-2 pr-3">Объём</th>
                 <th class="py-2 pr-3">Комиссия %</th>
                 <th class="py-2 pr-3">Себест.</th>
                 <th class="py-2 pr-3">Цена Ozon</th>
@@ -266,6 +267,39 @@
     }
     function ceilL(l, w, h) {
       return Math.ceil(((Number(l) * Number(w) * Number(h)) / 1000) * 100) / 100;
+    }
+
+    /** Объём в литрах: Ozon API отдаёт габариты в мм; приоритет — volume_weight из ЛК. */
+    function productVolumeLiters(product) {
+      const vw = Number(product?.volume_weight);
+      if (Number.isFinite(vw) && vw > 0 && vw <= 190) {
+        return Math.ceil(vw * 100) / 100;
+      }
+      const d = Number(product?.depth) || 0;
+      const w = Number(product?.width) || 0;
+      const h = Number(product?.height) || 0;
+      if (!d || !w || !h) return null;
+      let vol;
+      if (Math.max(d, w, h) >= 50) {
+        vol = (d * w * h) / 1_000_000;
+      } else {
+        vol = ceilL(d, w, h);
+      }
+      vol = Math.ceil(vol * 100) / 100;
+      if (vol > 190 && Number.isFinite(vw) && vw > 0) return Math.ceil(vw * 100) / 100;
+      return vol > 0 ? vol : null;
+    }
+
+    function productDimsLabel(product) {
+      const d = Number(product?.depth) || 0;
+      const w = Number(product?.width) || 0;
+      const h = Number(product?.height) || 0;
+      if (!d || !w || !h) return '';
+      const inMm = Math.max(d, w, h) >= 50;
+      const l = inMm ? d / 10 : d;
+      const ww = inMm ? w / 10 : w;
+      const hh = inMm ? h / 10 : h;
+      return l.toFixed(0) + '×' + ww.toFixed(0) + '×' + hh.toFixed(0) + ' см';
     }
     function ceilKg(w) {
       return Math.max(1, Math.ceil(Number(w) || 0));
@@ -594,7 +628,15 @@
       if (logLookup?.fromTable) {
         logistics = logLookup.amount;
         logisticsFromTable = true;
-        logisticsLabel = logLookup.label;
+        logisticsLabel = logLookup.label + ' · ' + vol.toFixed(2) + ' л';
+        if (price > 0 && logistics > price * 0.4) {
+          const fallbackLog = d.logistics;
+          if (fallbackLog > 0 && fallbackLog < logistics) {
+            logistics = fallbackLog;
+            logisticsLabel = 'лестница тарифов · ' + vol.toFixed(2) + ' л (таблица ' + rub(logLookup.amount) + ')';
+            logisticsFromTable = false;
+          }
+        }
       }
 
       state.tariff = {
@@ -846,14 +888,9 @@
     }
 
     function rowLogisticsPrice(r, priceCol) {
-      let price = parseMoneyCell(r[priceCol]);
+      const price = parseMoneyCell(r[priceCol]);
       if (price != null) return price;
-      let max = null;
-      for (let c = 3; c < r.length; c++) {
-        const v = parseMoneyCell(r[c]);
-        if (v != null && (max == null || v > max)) max = v;
-      }
-      return max;
+      return parseMoneyCell(r[3]);
     }
 
     function parseVolumeBandCell(text) {
@@ -920,7 +957,25 @@
     function lookupLogistics(vol, scheme, originCluster) {
       const table = state.logisticsTables?.[scheme];
       if (!table?.entries?.length) return null;
-      const matched = table.entries.filter((e) => vol >= e.volMin && vol <= e.volMax);
+      const v = Number(vol);
+      if (!Number.isFinite(v) || v <= 0) return null;
+      let matched = table.entries.filter((e) => v >= e.volMin && v <= e.volMax);
+      if (!matched.length) {
+        const bands = [];
+        const seen = new Set();
+        table.entries.forEach((e) => {
+          const key = e.volMin + '-' + e.volMax;
+          if (!seen.has(key)) {
+            seen.add(key);
+            bands.push({ volMin: e.volMin, volMax: e.volMax });
+          }
+        });
+        bands.sort((a, b) => a.volMin - b.volMin);
+        const band = bands.find((b) => v <= b.volMax) || bands[bands.length - 1];
+        if (band) {
+          matched = table.entries.filter((e) => e.volMin === band.volMin && e.volMax === band.volMax);
+        }
+      }
       if (!matched.length) return null;
       const origin = normCluster(originCluster || '');
       if (scheme === 'FBS') {
@@ -1436,35 +1491,51 @@
       const fallback = defaultTariff(vol, scheme, price);
       const tablePct = commissionForPrice(product, scheme, price);
       const origin = $('fbsOrigin')?.value || '';
-      const logLookup = lookupLogistics(vol, scheme, origin);
+      const volL = vol ?? productVolumeLiters(product) ?? 0;
+      const logLookup = lookupLogistics(volL, scheme, origin);
+      const apiLog = Number(apiTariff.logistics);
       if (logLookup?.fromTable) {
+        let amount = logLookup.amount;
+        let label = logLookup.label;
+        if (apiLog > 0 && amount > Math.max(apiLog * 2.5, price * 0.35)) {
+          amount = apiLog;
+          label = 'логистика API (таблица: ' + rub(logLookup.amount) + ')';
+        }
         return {
           commissionPct: tablePct ?? fallback.commissionPct,
-          logistics: logLookup.amount,
+          logistics: amount,
           reverse: apiTariff.reverse ?? fallback.reverse,
           lastMile: apiTariff.lastMile ?? fallback.lastMile,
           source: tablePct != null ? 'таблица комиссий 2026' : fallback.source,
-          apiExact: false,
-          logisticsFromTable: true,
-          logisticsLabel: logLookup.label,
+          apiExact: apiLog > 0 && amount === apiLog,
+          logisticsFromTable: amount === logLookup.amount,
+          logisticsLabel: label + ' · ' + (volL != null ? volL.toFixed(2) + ' л' : '—'),
         };
       }
       return {
         commissionPct: tablePct ?? fallback.commissionPct,
-        logistics: apiTariff.logistics ?? fallback.logistics,
+        logistics: apiLog > 0 ? apiLog : fallback.logistics,
         reverse: apiTariff.reverse ?? fallback.reverse,
         lastMile: apiTariff.lastMile ?? fallback.lastMile,
-        source: tablePct != null ? 'таблица комиссий 2026' : (apiTariff.logistics != null ? 'логистика API' : fallback.source),
+        source: tablePct != null ? 'таблица комиссий 2026' : (apiLog > 0 ? 'логистика API' : fallback.source),
         apiExact: !!apiTariff.apiExact,
+        logisticsLabel: volL != null ? volL.toFixed(2) + ' л' : '',
       };
     }
 
-    function formatBreakdownHtml(r) {
+    function formatBreakdownHtml(r, product) {
       const lines = r.rows.map((row) =>
         '<li class="flex justify-between gap-6 py-0.5"><span>' + escapeHtml(row.t) + '</span><span class="font-medium tabular-nums">' + rub(row.v) + '</span></li>'
       ).join('');
+      const volLine = product?.volume_liters != null
+        ? '<p class="mt-1 text-[11px] text-slate-500">Объём: <strong>' + product.volume_liters.toFixed(2).replace('.', ',') + ' л</strong>' +
+          (product.dimsLabel ? ' · габариты ' + escapeHtml(product.dimsLabel) : '') +
+          (product.volume_weight ? ' · volume_weight API: ' + product.volume_weight + ' л' : '') +
+          '</p>'
+        : '<p class="mt-1 text-[11px] text-amber-700">Объём не определён — проверьте габариты в ЛК Ozon</p>';
       return '<ul class="mt-2 max-w-md space-y-0">' + lines +
         '<li class="flex justify-between gap-6 border-t border-slate-200 pt-1 font-semibold"><span>Итого расходы</span><span>' + rub(r.ded + r.costs) + '</span></li></ul>' +
+        volLine +
         '<p class="mt-1 text-[11px] text-slate-400">' + escapeHtml(r.footNote) + '</p>';
     }
 
@@ -1505,6 +1576,11 @@
       const labelParts = catType?.label ? catType.label.split(' › ') : [];
       const typeName = item.type_name || item.typeName || labelParts[labelParts.length - 1] || '';
       const categoryName = item.category_name || item.categoryName || labelParts[0] || '';
+      const volume_weight = Number(
+        item.volume_weight ?? item.volumeWeight ?? item.sources?.[0]?.volume_weight ?? 0
+      ) || 0;
+      const dimSrc = { depth, width, height, volume_weight };
+      const volume_liters = productVolumeLiters(dimSrc);
       return {
         offer_id: String(item.offer_id || item.sku || ''),
         name: item.name || item.title || 'Товар',
@@ -1515,6 +1591,9 @@
         priceSource: parsedPrice?.priceSource || fallbackPriceInfo.source || 'обычная цена',
         image,
         depth, width, height,
+        volume_weight,
+        volume_liters,
+        dimsLabel: productDimsLabel(dimSrc),
         weight: weightG,
         product_id: item.product_id,
         categoryId,
@@ -1704,8 +1783,7 @@
     function recalcRow(offerId) {
       const p = state.products.find((x) => x.offer_id === offerId);
       if (!p) return;
-      const l = p.depth / 10, w = p.width / 10, h = p.height / 10;
-      const vol = ceilL(l, w, h);
+      const vol = p.volume_liters ?? productVolumeLiters(p);
       const scheme = getRowScheme(offerId);
       const testPrice = valueOrFallback(localStorage.getItem('test_price_' + offerId), Number(document.querySelector('[data-test-price="' + offerId + '"]')?.value) || p.price);
       const purchase = valueOrFallback(localStorage.getItem('sub_cost_' + offerId), Number(document.querySelector('[data-cost="' + offerId + '"]')?.value) || 0);
@@ -1749,7 +1827,12 @@
         commEl.className = 'font-medium ' + (commissionFromTable(p, scheme, testPrice) != null ? 'text-emerald-700' : '');
       }
       if (commSub) commSub.textContent = (commissionFromTable(p, scheme, testPrice) != null ? 'таблица 2026' : 'порог / API') + ' · ' + scheme;
-      if (breakdownEl) breakdownEl.innerHTML = formatBreakdownHtml(r);
+      if (breakdownEl) breakdownEl.innerHTML = formatBreakdownHtml(r, p);
+      const volEl = document.querySelector('[data-volume="' + offerId + '"]');
+      if (volEl) {
+        volEl.textContent = vol != null ? vol.toFixed(2).replace('.', ',') + ' л' : '—';
+        volEl.title = (p.dimsLabel || '') + (p.volume_weight ? ' · volume_weight ' + p.volume_weight + ' л' : '');
+      }
     }
 
     function setRowScheme(offerId, scheme) {
@@ -1780,13 +1863,13 @@
       const visible = filteredProducts();
       if (!state.products.length) {
         const tr = document.createElement('tr');
-        tr.innerHTML = '<td colspan="11" class="py-8 text-center text-sm text-slate-500">Товары не получены. Проверьте ключи API и нажмите «Подключить».</td>';
+        tr.innerHTML = '<td colspan="12" class="py-8 text-center text-sm text-slate-500">Товары не получены. Проверьте ключи API и нажмите «Подключить».</td>';
         tbody.appendChild(tr);
         return;
       }
       if (state.products.length && !visible.length) {
         const tr = document.createElement('tr');
-        tr.innerHTML = '<td colspan="11" class="py-8 text-center text-sm text-slate-500">Ничего не найдено по запросу «' + escapeHtml(state.assortSearch || $('assortSearch')?.value || '') + '»</td>';
+        tr.innerHTML = '<td colspan="12" class="py-8 text-center text-sm text-slate-500">Ничего не найдено по запросу «' + escapeHtml(state.assortSearch || $('assortSearch')?.value || '') + '»</td>';
         tbody.appendChild(tr);
         return;
       }
@@ -1819,6 +1902,10 @@
         tr.innerHTML =
           '<td class="py-3 pr-3"><div class="flex min-w-[260px] items-center gap-3">' + imageHtml + '<div><div class="font-medium">' + escapeHtml(p.name) + '</div><div class="text-xs text-slate-400">' + escapeHtml(oid) + '</div><div class="text-[11px] text-slate-400">' + escapeHtml([p.categoryName, p.typeName].filter(Boolean).join(' › ')) + '</div><div class="text-[11px] text-slate-400" data-tariff-source="' + oid + '">—</div></div></div></td>' +
           '<td class="py-3 pr-3 text-slate-600">' + (Number.isFinite(p.stock) ? p.stock : '—') + '</td>' +
+          '<td class="py-3 pr-3 text-xs text-slate-600" data-volume="' + oid + '">' +
+          (p.volume_liters != null ? '<div class="font-medium">' + p.volume_liters.toFixed(2).replace('.', ',') + ' л</div>' : '—') +
+          (p.dimsLabel ? '<div class="text-[11px] text-slate-400">' + escapeHtml(p.dimsLabel) + '</div>' : '') +
+          '</td>' +
           commissionCell +
           '<td class="py-3 pr-3"><input data-cost="' + oid + '" type="number" min="0" value="' + savedCost + '" placeholder="0" class="w-24 rounded border border-slate-200 px-2 py-1" /></td>' +
           '<td class="py-3 pr-3 text-slate-600">' + priceCell + '</td>' +
@@ -1835,7 +1922,7 @@
         const detailTr = document.createElement('tr');
         detailTr.className = 'border-b border-slate-50 bg-slate-50/40';
         detailTr.innerHTML =
-          '<td colspan="11" class="px-3 pb-3 pt-0">' +
+          '<td colspan="12" class="px-3 pb-3 pt-0">' +
           '<details class="text-xs"><summary class="cursor-pointer text-slate-500 hover:text-ozon">Расчёт по строкам</summary>' +
           '<div class="pt-2" data-breakdown-body="' + oid + '"></div></details></td>';
         tbody.appendChild(detailTr);
