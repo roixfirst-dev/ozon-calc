@@ -171,11 +171,14 @@
           <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Ассортимент</h2>
           <p id="assortHint" class="text-xs text-slate-500">Демо-товары (подключите API для загрузки)</p>
         </div>
+        <div id="apiDebug" class="mb-4 hidden rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs text-slate-600"></div>
         <div class="overflow-x-auto">
-          <table class="w-full min-w-[1100px] text-left text-sm">
+          <table class="w-full min-w-[1350px] text-left text-sm">
             <thead class="border-b border-slate-100 text-xs uppercase text-slate-500">
               <tr>
                 <th class="py-2 pr-3">Товар</th>
+                <th class="py-2 pr-3">Остаток</th>
+                <th class="py-2 pr-3">Комиссия API</th>
                 <th class="py-2 pr-3">Себест.</th>
                 <th class="py-2 pr-3">Цена Ozon</th>
                 <th class="py-2 pr-3">Тест-цена</th>
@@ -212,7 +215,7 @@
     const state = {
       connected: false, scheme: 'FBO', categoryTypes: [], selectedType: null,
       tariff: null, tariffSource: 'базовые тарифы Ozon', products: [], rowSchemes: {},
-      apiOk: false, lastApiError: '',
+      apiOk: false, lastApiError: '', apiLog: [],
     };
     let debounce = null;
 
@@ -293,14 +296,51 @@
       let data = {};
       try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
       const status = Number(data.status || data.statusCode || res.status);
-      const ozonError = data.error != null || (data.code && data.message && !data.result && !data.items);
+      const normalizedData = data.data ?? data.body ?? data;
+      const ozonError =
+        data.error != null ||
+        normalizedData?.error != null ||
+        (normalizedData?.code && normalizedData?.message && !normalizedData?.result && !normalizedData?.items);
       const ok = res.ok && status >= 200 && status < 300 && !ozonError;
       state.apiOk = state.apiOk || ok;
-      const normalizedData = data.data ?? data.body ?? data;
       if (!ok) {
         state.lastApiError = path + ': ' + (data.error || normalizedData?.message || normalizedData?.code || ('HTTP ' + status));
       }
+      logApi(path, status, ok, body, normalizedData);
       return { ok, status, data: normalizedData, raw: data };
+    }
+
+    function logApi(path, status, ok, body, data) {
+      const items = extractItems(data);
+      const result = data?.result || data || {};
+      const total = result.total ?? data?.total ?? '';
+      const message = ok ? ('OK' + (items.length ? ', items: ' + items.length : '') + (total !== '' ? ', total: ' + total : '')) : (data?.message || data?.code || state.lastApiError || 'error');
+      state.apiLog.push({ path, status, ok, message, body });
+      if (state.apiLog.length > 12) state.apiLog.shift();
+      renderApiDebug();
+    }
+
+    function renderApiDebug() {
+      const box = $('apiDebug');
+      if (!box) return;
+      if (!state.apiLog.length) {
+        box.classList.add('hidden');
+        return;
+      }
+      box.classList.remove('hidden');
+      box.innerHTML =
+        '<div class="mb-2 font-semibold text-slate-700">Журнал API Ozon</div>' +
+        state.apiLog.map((x) =>
+          '<div class="flex flex-wrap justify-between gap-2 border-t border-slate-200 py-1 first:border-t-0">' +
+          '<span class="' + (x.ok ? 'text-emerald-700' : 'text-red-700') + '">' + escapeHtml(x.path) + '</span>' +
+          '<span>HTTP ' + x.status + ' · ' + escapeHtml(x.message) + '</span>' +
+          '</div>'
+        ).join('');
+    }
+
+    function extractItems(data) {
+      const items = data?.items || data?.result?.items || [];
+      return Array.isArray(items) ? items : [];
     }
 
     function defaultTariff(vol, scheme, price) {
@@ -591,35 +631,66 @@
 
     function num(...values) {
       for (const v of values) {
-        const n = Number(v);
+        const n = Number(String(v ?? '').replace(',', '.'));
         if (Number.isFinite(n) && n > 0) return n;
       }
       return null;
     }
+    function sumNums(...values) {
+      return values.reduce((sum, v) => {
+        const n = Number(String(v ?? '').replace(',', '.'));
+        return Number.isFinite(n) && n > 0 ? sum + n : sum;
+      }, 0);
+    }
     function parsePriceRow(row) {
       const price = row.price || {};
       const commissions = row.commissions || row.commission || {};
+      const fboDirect = num(commissions.fbo_direct_flow_trans_max_amount, commissions.fbo_direct_flow_trans_min_amount, row.fbo_direct_flow_trans_max_amount);
+      const fbsDirect = num(commissions.fbs_direct_flow_trans_max_amount, commissions.fbs_direct_flow_trans_min_amount, row.fbs_direct_flow_trans_max_amount);
+      const fboLastMile = num(commissions.fbo_deliv_to_customer_amount, row.fbo_deliv_to_customer_amount);
+      const fbsLastMile = num(commissions.fbs_deliv_to_customer_amount, row.fbs_deliv_to_customer_amount);
       return {
         price: num(price.price, price.marketing_price, price.min_price, row.price, row.marketing_price, row.min_price),
         tariffs: {
           FBO: {
             commissionPct: num(commissions.sales_percent_fbo, commissions.commission_fbo, commissions.sales_percent, row.commission_fbo, row.sales_percent_fbo, row.sales_percent),
-            logistics: num(commissions.fbo_direct_flow_trans_max_amount, commissions.fbo_direct_flow_trans_min_amount, row.fbo_direct_flow_trans_max_amount),
+            logistics: fboDirect,
             reverse: num(commissions.fbo_return_flow_amount, row.fbo_return_flow_amount),
-            lastMile: num(commissions.fbo_deliv_to_customer_amount, row.fbo_deliv_to_customer_amount),
+            lastMile: fboLastMile,
             source: '/v4/product/info/prices',
-            apiExact: true,
+            apiExact: fboDirect != null || fboLastMile != null,
           },
           FBS: {
             commissionPct: num(commissions.sales_percent_fbs, commissions.commission_fbs, commissions.sales_percent, row.commission_fbs, row.sales_percent_fbs, row.sales_percent),
-            logistics: num(commissions.fbs_direct_flow_trans_max_amount, commissions.fbs_direct_flow_trans_min_amount, row.fbs_direct_flow_trans_max_amount),
+            logistics: fbsDirect,
             reverse: num(commissions.fbs_return_flow_amount, row.fbs_return_flow_amount),
-            lastMile: num(commissions.fbs_deliv_to_customer_amount, row.fbs_deliv_to_customer_amount),
+            lastMile: fbsLastMile,
             source: '/v4/product/info/prices',
-            apiExact: true,
+            apiExact: fbsDirect != null || fbsLastMile != null,
           },
         },
       };
+    }
+    function parseInfoRow(row) {
+      const commissions = row.commissions || row.commission || {};
+      if (!Object.keys(commissions).length) return null;
+      return parsePriceRow({ ...row, commissions });
+    }
+    function mergeTariffs(primary, secondary) {
+      if (!primary) return secondary || null;
+      if (!secondary) return primary;
+      return {
+        FBO: { ...(secondary.FBO || {}), ...(primary.FBO || {}) },
+        FBS: { ...(secondary.FBS || {}), ...(primary.FBS || {}) },
+      };
+    }
+    function parseStocks(row) {
+      const stocks = row.stocks || row.stock || {};
+      if (Array.isArray(stocks)) {
+        return stocks.reduce((sum, s) => sum + (Number(s.present ?? s.stock ?? s.available_stock_count ?? 0) || 0), 0);
+      }
+      if (Array.isArray(row.stocks?.stocks)) return parseStocks({ stocks: row.stocks.stocks });
+      return Number(stocks.present ?? stocks.available_stock_count ?? row.present ?? row.available_stock_count ?? 0) || 0;
     }
     function getProductTariff(product, scheme, vol, price) {
       const apiTariff = product?.tariffs?.[scheme] || {};
@@ -658,6 +729,7 @@
         depth, width, height,
         weight: weightG,
         product_id: item.product_id,
+        stock: Number(item.stock ?? parseStocks(item)) || 0,
         tariffs: item._parsedPrice?.tariffs || item.tariffs || null,
       };
     }
@@ -666,17 +738,20 @@
       const all = [];
       let lastId = '';
       for (let page = 0; page < 30; page++) {
-        const bodyV3 = { filter: { visibility: 'ALL' }, limit: 100 };
-        if (lastId) bodyV3.last_id = lastId;
-        let res = await apiPost('/v3/product/list', bodyV3);
-        let result = res.data?.result || res.data || {};
-        let items = result.items || [];
-        if (!res.ok || !items.length) {
-          const bodyV2 = { filter: { visibility: 'ALL' }, limit: 100 };
-          if (lastId) bodyV2.last_id = lastId;
-          res = await apiPost('/v2/product/list', bodyV2);
+        const attempts = [
+          ['/v3/product/list', { filter: { visibility: 'ALL' }, limit: 100, last_id: lastId }],
+          ['/v3/product/list', { limit: 100, last_id: lastId }],
+          ['/v2/product/list', { filter: { visibility: 'ALL' }, limit: 100, last_id: lastId }],
+        ];
+        let res = null;
+        let result = {};
+        let items = [];
+        for (const [path, body] of attempts) {
+          if (!lastId) delete body.last_id;
+          res = await apiPost(path, body);
           result = res.data?.result || res.data || {};
-          items = result.items || [];
+          items = Array.isArray(result.items) ? result.items : [];
+          if (res.ok && items.length) break;
         }
         all.push(...items);
         lastId = result.last_id || '';
@@ -692,25 +767,30 @@
       const infoByOffer = new Map();
       const priceByPid = new Map();
       const priceByOffer = new Map();
+      const stocksByPid = new Map();
+      const stocksByOffer = new Map();
       const ids = productIds.length ? productIds : offerIds;
       const idField = productIds.length ? 'product_id' : 'offer_id';
       for (let i = 0; i < ids.length; i += 100) {
         const chunk = ids.slice(i, i + 100);
-        const info = await apiPost('/v3/product/info/list', { [idField]: chunk });
+        const infoBody = productIds.length ? { product_id: chunk, sku: [] } : { offer_id: chunk };
+        const info = await apiPost('/v3/product/info/list', infoBody);
         if (info.ok) {
           (info.data?.items || info.data?.result?.items || []).forEach((x) => {
             const pid = String(x.product_id || x.id);
             const offer = String(x.offer_id || '');
             if (pid && pid !== 'undefined') infoByPid.set(pid, x);
             if (offer) infoByOffer.set(offer, x);
+            const parsedInfo = parseInfoRow(x);
+            if (parsedInfo) {
+              if (pid && pid !== 'undefined') priceByPid.set(pid, parsedInfo);
+              if (offer) priceByOffer.set(offer, parsedInfo);
+            }
           });
         }
-        let priceSource = '/v4/product/info/prices';
+        let priceSource = '/v5/product/info/prices';
         let pr = await apiPost(priceSource, { filter: { [idField]: chunk, visibility: 'ALL' }, limit: 100 });
-        if (!pr.ok) {
-          priceSource = '/v5/product/info/prices';
-          pr = await apiPost(priceSource, { filter: { [idField]: chunk, visibility: 'ALL' }, limit: 100 });
-        }
+        if (!pr.ok && idField === 'offer_id') pr = await apiPost(priceSource, { filter: { offer_id: chunk, visibility: 'ALL' }, limit: 100 });
         if (pr.ok) {
           (pr.data?.items || pr.data?.result?.items || []).forEach((row) => {
             const pid = String(row.product_id);
@@ -718,9 +798,23 @@
             const parsed = parsePriceRow(row);
             parsed.tariffs.FBO.source = priceSource;
             parsed.tariffs.FBS.source = priceSource;
-            if (pid && pid !== 'undefined') priceByPid.set(pid, parsed);
-            if (offer) priceByOffer.set(offer, parsed);
+            const prevPid = priceByPid.get(pid);
+            const prevOffer = priceByOffer.get(offer);
+            if (pid && pid !== 'undefined') priceByPid.set(pid, { price: parsed.price ?? prevPid?.price, tariffs: mergeTariffs(parsed.tariffs, prevPid?.tariffs) });
+            if (offer) priceByOffer.set(offer, { price: parsed.price ?? prevOffer?.price, tariffs: mergeTariffs(parsed.tariffs, prevOffer?.tariffs) });
           });
+        }
+        if (productIds.length) {
+          const st = await apiPost('/v4/product/info/stocks', { filter: { product_id: chunk, visibility: 'ALL' }, limit: 100 });
+          if (st.ok) {
+            (st.data?.items || st.data?.result?.items || []).forEach((row) => {
+              const pid = String(row.product_id);
+              const offer = String(row.offer_id || '');
+              const qty = parseStocks(row);
+              if (pid && pid !== 'undefined') stocksByPid.set(pid, qty);
+              if (offer) stocksByOffer.set(offer, qty);
+            });
+          }
         }
       }
       return listItems.map((it) => {
@@ -728,7 +822,8 @@
         const offer = String(it.offer_id || '');
         const info = infoByPid.get(pid) || infoByOffer.get(offer) || {};
         const parsed = priceByPid.get(pid) || priceByOffer.get(offer);
-        const merged = { ...it, ...info, _parsedPrice: parsed };
+        const stock = stocksByPid.get(pid) ?? stocksByOffer.get(offer);
+        const merged = { ...it, ...info, _parsedPrice: parsed, stock };
         return normalizeProduct(merged);
       });
     }
@@ -737,6 +832,7 @@
       let products = [];
       let fromApi = false;
       if (state.connected) {
+        $('assortHint').textContent = 'Загружаю товары из Ozon API...';
         try {
           const listItems = await fetchAllProductListItems();
           if (listItems.length) {
@@ -751,10 +847,11 @@
         }
       }
       if (!fromApi) {
-        products = DEMO_PRODUCTS.map(normalizeProduct);
         if (state.connected) {
-          $('assortHint').textContent = 'API не вернул товары — показаны демо' + (state.lastApiError ? ' · ' + state.lastApiError : '');
+          products = [];
+          $('assortHint').textContent = 'API не вернул товары' + (state.lastApiError ? ' · ' + state.lastApiError : ' · смотрите журнал API ниже');
         } else {
+          products = DEMO_PRODUCTS.map(normalizeProduct);
           $('assortHint').textContent = 'Демо-товары (подключите API)';
         }
       }
@@ -835,6 +932,12 @@
     function renderAssortment() {
       const tbody = $('assortBody');
       tbody.innerHTML = '';
+      if (!state.products.length) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td colspan="11" class="py-8 text-center text-sm text-slate-500">Товары не получены. Проверьте журнал API выше: там будет точный метод, HTTP-статус и ошибка Ozon.</td>';
+        tbody.appendChild(tr);
+        return;
+      }
       state.products.forEach((p) => {
         const oid = p.offer_id;
         const savedCost = localStorage.getItem('sub_cost_' + oid) || '';
@@ -845,6 +948,8 @@
         tr.className = 'border-b border-slate-50 align-middle';
         tr.innerHTML =
           '<td class="py-3 pr-3"><div class="font-medium">' + escapeHtml(p.name) + '</div><div class="text-xs text-slate-400">' + escapeHtml(oid) + '</div><div class="text-[11px] text-slate-400" data-tariff-source="' + oid + '">—</div></td>' +
+          '<td class="py-3 pr-3 text-slate-600">' + (Number.isFinite(p.stock) ? p.stock : '—') + '</td>' +
+          '<td class="py-3 pr-3 text-xs text-slate-600"><div>FBO: ' + pct(p.tariffs?.FBO?.commissionPct) + '</div><div>FBS: ' + pct(p.tariffs?.FBS?.commissionPct) + '</div></td>' +
           '<td class="py-3 pr-3"><input data-cost="' + oid + '" type="number" min="0" value="' + savedCost + '" placeholder="0" class="w-24 rounded border border-slate-200 px-2 py-1" /></td>' +
           '<td class="py-3 pr-3 text-slate-600">' + rub(p.price) + '</td>' +
           '<td class="py-3 pr-3"><input data-test-price="' + oid + '" type="number" min="0" value="' + savedTest + '" class="w-24 rounded border border-slate-200 px-2 py-1" /></td>' +
