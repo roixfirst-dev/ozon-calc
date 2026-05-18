@@ -2462,8 +2462,10 @@
       dashChartsThemed = true;
     }
     function chartTooltipLabel(ctx) {
-      let v = ctx.parsed;
-      if (v && typeof v === 'object') v = v.y ?? v.x ?? ctx.raw;
+      let v = ctx.raw;
+      if (Array.isArray(v)) v = v[1] ?? v[0];
+      if (v && typeof v === 'object') v = v.y ?? v.x;
+      if (v == null && ctx.parsed && typeof ctx.parsed === 'object') v = ctx.parsed.x ?? ctx.parsed.y;
       const prefix = ctx.dataset?.label ? ctx.dataset.label + ': ' : '';
       return prefix + (typeof v === 'number' ? rub(v) : String(v ?? ''));
     }
@@ -2547,18 +2549,54 @@
       }
       return out.sort((a, b) => b.value - a.value);
     }
+    function prettyOzonServiceName(name) {
+      const raw = String(name || 'Услуга Ozon').trim();
+      const lower = raw.toLowerCase();
+      const rules = [
+        [/directflowlogistic|directflowtrans|магистрал/i, 'Магистраль / логистика'],
+        [/returnflowlogistic|returnflowtrans|returnnotdeliv|returnafterdeliv|returnpartgoods|возврат/i, 'Обратная логистика / возвраты'],
+        [/delivt[o]?customer|lastmile|courier|достав/i, 'Доставка покупателю'],
+        [/fulfillment|dropoff|pickup|обработка|сборк/i, 'Обработка отправлений'],
+        [/storage|хранен/i, 'Хранение'],
+        [/sort|redistribution/i, 'Сортировка и перемещение'],
+        [/marketing|adv|promotion|реклам|продвиж/i, 'Продвижение и реклама'],
+        [/acquiring|эквайр/i, 'Эквайринг'],
+        [/premium|cashback|points|балл|бонус/i, 'Бонусы и Premium-программы'],
+        [/commission|комисс/i, 'Комиссия Ozon'],
+      ];
+      for (const [re, label] of rules) {
+        if (re.test(raw) || re.test(lower)) return label;
+      }
+      return raw
+        .replace(/^MarketplaceServiceItem/i, '')
+        .replace(/^MarketplaceService/i, '')
+        .replace(/^Marketplace/i, '')
+        .replace(/([a-zа-я])([A-ZА-Я])/g, '$1 $2')
+        .replace(/_/g, ' ')
+        .trim() || 'Услуга Ozon';
+    }
+    function normalizeServiceRows(rows) {
+      const map = new Map();
+      for (const row of rows || []) {
+        const label = prettyOzonServiceName(row[0]);
+        const value = Number(row[1]) || 0;
+        if (Math.abs(value) < 0.01) continue;
+        map.set(label, (map.get(label) || 0) + value);
+      }
+      return [...map.entries()].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+    }
     function dashServiceRows(current) {
       const direct = current?.services || [];
-      if (direct.length) return direct.filter((row) => Math.abs(Number(row[1]) || 0) >= 0.01);
+      if (direct.length) return normalizeServiceRows(direct);
 
       const totals = current?.totals || {};
-      return [
+      return normalizeServiceRows([
         ['Комиссия за продажу', totals.sale_commission],
         ['Обработка и доставка', totals.processing_and_delivery],
         ['Услуги Ozon', totals.services_amount],
         ['Возвраты и отмены', totals.refunds_and_cancellations],
         ['Прочее', totals.others_amount],
-      ].filter((row) => Math.abs(Number(row[1]) || 0) >= 0.01);
+      ]);
     }
     function shortDayLabel(dayStr) {
       const d = String(dayStr || '');
