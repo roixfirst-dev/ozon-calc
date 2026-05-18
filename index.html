@@ -1,4 +1,4 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
@@ -2535,6 +2535,25 @@
       }
       return out.sort((a, b) => b.value - a.value);
     }
+    function dashServiceRows(current) {
+      const direct = current?.services || [];
+      if (direct.length) return direct;
+
+      const serviceOps = (current?.opTypes || [])
+        .filter((o) => /(услуг|достав|логист|хран|реклам|возврат|сборк|pickup|drop)/i.test(o.label || ''))
+        .filter((o) => Number(o.amount) !== 0)
+        .map((o) => [o.label, o.amount]);
+      if (serviceOps.length) return serviceOps;
+
+      const totals = current?.totals || {};
+      return [
+        ['Комиссия за продажу', totals.sale_commission],
+        ['Обработка и доставка', totals.processing_and_delivery],
+        ['Услуги Ozon', totals.services_amount],
+        ['Возвраты и отмены', totals.refunds_and_cancellations],
+        ['Прочее', totals.others_amount],
+      ].filter((row) => Number(row[1]) !== 0);
+    }
     function shortDayLabel(dayStr) {
       const d = String(dayStr || '');
       if (/^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(8, 10) + '.' + d.slice(5, 7);
@@ -2673,7 +2692,7 @@
         });
       }
 
-      const topSvc = (cur.services || []).slice(0, 8);
+      const topSvc = dashServiceRows(cur).slice(0, 8);
       const svcEl = $('dashChartServices');
       if (svcEl && topSvc.length) {
         const n = topSvc.length;
@@ -2786,14 +2805,17 @@
       html += '</tbody></table>';
       el.innerHTML = html;
     }
-    function renderDashServices(services) {
+    function renderDashServices(services, directDetailsLoaded) {
       const el = $('dashServices');
       if (!el) return;
       if (!services?.length) {
         el.innerHTML = '<p class="text-slate-400">Детализация услуг недоступна или пуста</p>';
         return;
       }
-      el.innerHTML = services.slice(0, 40).map(([name, price]) =>
+      const note = directDetailsLoaded
+        ? ''
+        : '<p class="mb-2 text-xs text-amber-600">Ozon не отдал подробный отчёт услуг за период — показываю fallback из операций/итогов.</p>';
+      el.innerHTML = note + services.slice(0, 40).map(([name, price]) =>
         '<div class="flex justify-between gap-2 border-b border-slate-50 py-1"><span class="text-slate-600">' + name + '</span><span class="font-medium ' + (price < 0 ? 'text-red-600' : '') + '">' + rub(price) + '</span></div>'
       ).join('');
     }
@@ -2815,7 +2837,7 @@
       renderDashFinance(payload.current.totals);
       renderDashTaxEst(payload.current.totals);
       renderDashAnalytics(payload.current.analytics.rows);
-      renderDashServices(payload.current.services);
+      renderDashServices(dashServiceRows(payload.current), !!payload.current.services?.length);
       renderDashOpTypes(payload.current.opTypes);
       renderDashCharts(payload);
       updateDashTaxInfo();
