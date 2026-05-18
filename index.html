@@ -94,6 +94,20 @@
               <button type="button" class="scheme-btn flex-1 rounded-xl border-2 border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600" data-scheme="FBS">FBS</button>
             </div>
           </div>
+          <label id="fbsOriginWrap" class="hidden block text-sm">
+            <span class="text-slate-500">Кластер отгрузки FBS</span>
+            <select id="fbsOrigin" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"></select>
+            <p class="mt-1 text-xs text-slate-400">В юнитку заложен максимальный тариф доставки из этого кластера по таблице.</p>
+          </label>
+          <label id="fboClusterWrap" class="hidden flex items-center gap-2 text-sm">
+            <input id="fboSameCluster" type="checkbox" class="rounded border-slate-300 text-ozon" />
+            <span class="text-slate-600">FBO: заказ в том же кластере (мин. тариф)</span>
+          </label>
+          <label class="block text-sm">
+            <span class="text-slate-500">Эквайринг, %</span>
+            <input id="acquiringRate" type="number" min="0" max="10" step="0.1" value="1.5" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" />
+            <p class="mt-1 text-xs text-slate-400">Комиссия за приём оплаты с каждой продажи (по умолчанию 1,5%).</p>
+          </label>
 
           <label class="block text-sm">
             <div class="flex justify-between"><span>Цена продажи</span><span id="priceDisplay" class="font-semibold text-ozon">2 490 ₽</span></div>
@@ -214,9 +228,14 @@
     const LS_TAX_SYSTEM = 'ozon_ue_tax_system';
     const LS_TAX_RATE = 'ozon_ue_tax_rate';
     const LS_VAT_RATE = 'ozon_ue_vat_rate';
+    const LS_ACQUIRING_RATE = 'ozon_ue_acquiring_rate';
+    const LS_FBS_ORIGIN = 'ozon_ue_fbs_origin';
+    const LS_LOGISTICS_TABLE = 'ozon_ue_logistics_table';
     const LS_COMMISSION_TABLE = 'ozon_ue_commission_table_2026';
     const COMMISSION_SHEET_ID = '1Kh31uRcKJJ5SU-TZHBtsBlZ4W4SH9QzT1eJA78dcBtY';
+    const LOGISTICS_SHEET_ID = '1FNqyAsIcI3wCrVvqnQmo1gEWdOzsp00Z64eKhpNgy7Y';
     const COMMISSION_TABLE_URL = 'unit.xlsx';
+    const DEFAULT_ACQUIRING = 1.5;
     const FBS_FEE = 35;
     const PREMIUM = 2.5;
     const LAST_MILE = 25;
@@ -224,7 +243,8 @@
     const state = {
       connected: false, scheme: 'FBO', categoryTypes: [], selectedType: null,
       tariff: null, tariffSource: 'базовые тарифы Ozon', products: [], rowSchemes: {},
-      apiOk: false, lastApiError: '', apiLog: [], commissionTable: null, categoryTypeById: new Map(),
+      apiOk: false, lastApiError: '', apiLog: [],       commissionTable: null, logisticsTables: { FBS: null, FBO: null },
+      categoryTypeById: new Map(),
       assortSearch: '', dataLoading: false,
     };
     let debounce = null;
@@ -377,6 +397,7 @@
       const extra = Number(opts.extra) || 0;
       const taxP = Number(opts.taxP ?? 6) || 0;
       const vatP = Number(opts.vatP ?? 0) || 0;
+      const acqP = Number(opts.acqP ?? DEFAULT_ACQUIRING) || 0;
       const taxSystem = opts.taxSystem || 'income';
       const mktP = Number(opts.mktP ?? 8) || 0;
       const loc = Number(opts.loc ?? 75) || 0;
@@ -387,34 +408,48 @@
       const tariff = opts.tariff || defaultTariff(vol, scheme, price);
       let comm = tariff.commissionPct + (premium ? PREMIUM : 0);
       const commAmt = price * (comm / 100);
+      const acqAmt = price * (acqP / 100);
+      let logTotal;
+      let logLabel;
       const mult = locMult(loc);
-      const apiExact = !!tariff.apiExact;
-      const mag = apiExact ? Number(tariff.logistics || 0) : tariff.logistics * mult;
-      const nonLoc = apiExact ? 0 : price * 0.08 * (100 - loc) / 100;
-      const lm = apiExact ? Number(tariff.lastMile || 0) : Math.min(LAST_MILE, tariff.lastMile ?? LAST_MILE);
-      const logTotal = mag + nonLoc + lm;
+      if (tariff.logisticsFromTable) {
+        logTotal = Number(tariff.logistics) || 0;
+        logLabel = tariff.logisticsLabel || 'Логистика (таблица кластеров)';
+      } else {
+        const apiExact = !!tariff.apiExact;
+        const mag = apiExact ? Number(tariff.logistics || 0) : tariff.logistics * mult;
+        const nonLoc = apiExact ? 0 : price * 0.08 * (100 - loc) / 100;
+        const lm = apiExact ? Number(tariff.lastMile || 0) : Math.min(LAST_MILE, tariff.lastMile ?? LAST_MILE);
+        logTotal = mag + nonLoc + lm;
+        logLabel = apiExact ? 'Логистика API (магистраль + ПМ)' : 'Логистика (магистраль + ПМ)';
+      }
+      const magBase = tariff.logisticsFromTable ? logTotal : (tariff.logistics || logTotal);
       const fbs = scheme === 'FBS' ? FBS_FEE : 0;
-      const retCost = (retP / 100) * (tariff.reverse ?? mag * 0.5);
+      const retCost = (retP / 100) * (tariff.reverse ?? magBase * 0.5);
       const mktAmt = price * (mktP / 100);
-      const baseBeforeTax = price - commAmt - logTotal - fbs - retCost - mktAmt - purchase - extra;
+      const baseBeforeTax = price - commAmt - acqAmt - logTotal - fbs - retCost - mktAmt - purchase - extra;
       let taxAmt = price * (taxP / 100);
       if (taxSystem === 'profit') taxAmt = Math.max(0, baseBeforeTax) * (taxP / 100);
       if (taxSystem === 'vat') taxAmt = taxP > 0 ? price * (taxP / (100 + taxP)) : 0;
       const vatAmt = vatP > 0 ? price * (vatP / 100) : 0;
-      const ded = commAmt + logTotal + fbs + retCost + taxAmt + vatAmt + mktAmt;
+      const ded = commAmt + acqAmt + logTotal + fbs + retCost + taxAmt + vatAmt + mktAmt;
       const costs = purchase + extra;
       const net = price - ded - costs;
       const margin = price > 0 ? (net / price) * 100 : 0;
       const roi = costs > 0 ? (net / costs) * 100 : 0;
       const rows = [
         { t: 'Комиссия Ozon (' + comm.toFixed(1) + '%)', v: commAmt },
-        { t: apiExact ? 'Логистика API (магистраль + ПМ)' : 'Логистика (магистраль + ПМ)', v: logTotal },
+        { t: 'Эквайринг (' + acqP + '%)', v: acqAmt },
+        { t: logLabel, v: logTotal },
       ];
       if (fbs) rows.push({ t: 'Обработка FBS', v: fbs });
       rows.push({ t: 'Возвраты (' + retP + '%)', v: retCost }, { t: 'Реклама / ДРР (' + mktP + '%)', v: mktAmt }, { t: 'Налог (' + taxLabel(taxSystem) + ', ' + taxP + '%)', v: taxAmt });
       if (vatAmt > 0) rows.push({ t: 'НДС (' + vatP + '%)', v: vatAmt });
       rows.push({ t: 'Себестоимость + прочее', v: costs, m: true });
-      return { net, margin, roi, rows, ded, costs, vol, mult, scheme, comm, footNote: scheme + ' · локализация ×' + mult.toFixed(2) + ' · ' + vol.toFixed(2) + ' л', tariff };
+      const footNote = tariff.logisticsFromTable
+        ? (scheme + ' · ' + (tariff.logisticsLabel || 'таблица логистики') + ' · ' + vol.toFixed(2) + ' л')
+        : (scheme + ' · локализация ×' + mult.toFixed(2) + ' · ' + vol.toFixed(2) + ' л');
+      return { net, margin, roi, rows, ded, costs, vol, mult, scheme, comm, footNote, tariff };
     }
 
     function taxLabel(system) {
@@ -554,22 +589,31 @@
       const d = defaultTariff(vol, scheme, price);
       const product = productFromSelectedCategory();
       const tablePct = product ? commissionFromTable(product, scheme, price) : null;
+      const origin = $('fbsOrigin')?.value || '';
+      const logLookup = lookupLogistics(vol, scheme, origin);
       let logistics = d.logistics;
-      let reverse = d.reverse;
-      let lastMile = d.lastMile;
-      let apiExact = false;
-      let logisticsSource = d.source;
+      let logisticsFromTable = false;
+      let logisticsLabel = '';
+      if (logLookup?.fromTable) {
+        logistics = logLookup.amount;
+        logisticsFromTable = true;
+        logisticsLabel = logLookup.label;
+      }
 
       state.tariff = {
         commissionPct: tablePct ?? d.commissionPct,
         logistics,
-        reverse,
-        lastMile,
+        reverse: d.reverse,
+        lastMile: d.lastMile,
         source: tablePct != null ? 'таблица комиссий 2026' : d.source,
-        apiExact,
-        logisticsSource,
+        apiExact: false,
+        logisticsFromTable,
+        logisticsLabel,
       };
-      state.tariffSource = state.tariff.source;
+      state.tariffSource = [
+        state.tariff.source,
+        logisticsFromTable ? logisticsLabel : d.source,
+      ].filter(Boolean).join(' · ');
     }
 
     function flash(el) {
@@ -592,6 +636,7 @@
         extra: $('extra').value,
         taxP: $('tax').value,
         vatP: $('vatRate').value,
+        acqP: $('acquiringRate')?.value,
         taxSystem: $('taxSystem').value,
         mktP: $('marketing').value,
         loc: $('locIndex').value,
@@ -789,6 +834,169 @@
         .replace(/ё/g, 'е')
         .replace(/[^a-zа-я0-9]+/g, ' ')
         .trim();
+    }
+
+    function normCluster(s) {
+      return normalizeText(s);
+    }
+
+    function parseMoneyCell(value) {
+      if (value == null || value === '') return null;
+      const n = Number(String(value).replace(/\s/g, '').replace(',', '.').replace(/[^\d.-]/g, ''));
+      return Number.isFinite(n) ? n : null;
+    }
+
+    function parseVolumeBandCell(text) {
+      const s = normalizeText(text);
+      if (!s) return null;
+      const nums = [...String(text).matchAll(/(\d+(?:[.,]\d+)?)/g)]
+        .map((m) => parseFloat(m[1].replace(',', '.')))
+        .filter(Number.isFinite);
+      if (s.includes('свыше') || s.includes('более')) return { min: nums[0] || 0, max: Infinity };
+      if (nums.length >= 2) return { min: nums[0], max: nums[1] };
+      if (nums.length === 1) return { min: 0, max: nums[0] };
+      return null;
+    }
+
+    function parseLogisticsRows(rows) {
+      const headerRow = rows.findIndex((r) => {
+        const a = normalizeText(r[0]);
+        return a.includes('объем') || a.includes('объём') || a.includes('литр');
+      });
+      if (headerRow < 0) throw new Error('Не найдена колонка «Объём товара» в таблице логистики');
+      const entries = [];
+      const origins = new Set();
+      for (let i = headerRow + 1; i < rows.length; i++) {
+        const r = rows[i] || [];
+        const band = parseVolumeBandCell(r[0]);
+        const origin = String(r[1] || '').trim();
+        const dest = String(r[2] || '').trim();
+        let price = parseMoneyCell(r[3]);
+        if (price == null) {
+          for (let c = 3; c < r.length; c++) {
+            price = parseMoneyCell(r[c]);
+            if (price != null) break;
+          }
+        }
+        if (!band || !origin || !dest || price == null) continue;
+        entries.push({ volMin: band.min, volMax: band.max, origin, dest, price });
+        origins.add(origin);
+      }
+      if (!entries.length) throw new Error('В таблице логистики нет строк с тарифами');
+      return { entries, origins: [...origins].sort((a, b) => a.localeCompare(b, 'ru')) };
+    }
+
+    function lookupLogistics(vol, scheme, originCluster) {
+      const table = state.logisticsTables?.[scheme];
+      if (!table?.entries?.length) return null;
+      const matched = table.entries.filter((e) => vol >= e.volMin && vol <= e.volMax);
+      if (!matched.length) return null;
+      const origin = normCluster(originCluster || '');
+      if (scheme === 'FBS') {
+        let pool = matched;
+        if (origin) pool = matched.filter((e) => normCluster(e.origin) === origin);
+        if (!pool.length) pool = matched;
+        const amount = Math.max(...pool.map((e) => e.price));
+        return {
+          amount,
+          fromTable: true,
+          label: 'FBS макс. · ' + (originCluster || table.origins?.[0] || ''),
+        };
+      }
+      const same = matched.filter((e) => normCluster(e.origin) === normCluster(e.dest));
+      const cross = matched.filter((e) => normCluster(e.origin) !== normCluster(e.dest));
+      const fboSame = !!$('fboSameCluster')?.checked;
+      let amount;
+      let label;
+      if (fboSame && same.length) {
+        amount = Math.min(...same.map((e) => e.price));
+        label = 'FBO мин. (тот же кластер)';
+      } else if (cross.length) {
+        amount = Math.max(...cross.map((e) => e.price));
+        label = 'FBO макс. (межкластер)';
+      } else if (same.length) {
+        amount = Math.min(...same.map((e) => e.price));
+        label = 'FBO мин. (кластер)';
+      } else {
+        amount = Math.max(...matched.map((e) => e.price));
+        label = 'FBO макс.';
+      }
+      return { amount, fromTable: true, label };
+    }
+
+    function fillFbsOriginSelect(origins) {
+      const sel = $('fbsOrigin');
+      if (!sel) return;
+      const saved = localStorage.getItem(LS_FBS_ORIGIN) || '';
+      sel.innerHTML = '';
+      (origins || []).forEach((o) => {
+        const opt = document.createElement('option');
+        opt.value = o;
+        opt.textContent = o;
+        sel.appendChild(opt);
+      });
+      if (saved && origins.includes(saved)) sel.value = saved;
+      else if (origins.length) sel.value = origins[0];
+    }
+
+    function updateSchemeUi() {
+      const fbs = state.scheme === 'FBS';
+      $('fbsOriginWrap')?.classList.toggle('hidden', !fbs);
+      $('fboClusterWrap')?.classList.toggle('hidden', fbs);
+    }
+
+    async function loadLogisticsSheetByName(sheetName) {
+      const result = await proxyCall({
+        action: 'getSpreadsheet',
+        spreadsheetId: LOGISTICS_SHEET_ID,
+        sheetName,
+        skipCache: true,
+      });
+      if (!result.ok) throw new Error(result.error || 'Ошибка загрузки логистики');
+      const rows = result.data?.rows;
+      if (!Array.isArray(rows) || !rows.length) throw new Error('Пустой лист логистики: ' + sheetName);
+      return parseLogisticsRows(rows);
+    }
+
+    async function loadLogisticsTable() {
+      try {
+        const listRes = await proxyCall({ action: 'listSpreadsheetSheets', spreadsheetId: LOGISTICS_SHEET_ID });
+        const names = listRes.data?.sheets || ['Лист1'];
+        const fbsName = names.find((n) => /fbs/i.test(n)) || names[0];
+        const fboName = names.find((n) => /fbo/i.test(n)) || names.find((n) => n !== fbsName) || names[0];
+        state.logisticsTables.FBS = await loadLogisticsSheetByName(fbsName);
+        state.logisticsTables.FBS.sheetName = fbsName;
+        try {
+          state.logisticsTables.FBO = await loadLogisticsSheetByName(fboName);
+          state.logisticsTables.FBO.sheetName = fboName;
+        } catch (_) {
+          state.logisticsTables.FBO = state.logisticsTables.FBS;
+        }
+        const origins = [...new Set([
+          ...(state.logisticsTables.FBS?.origins || []),
+          ...(state.logisticsTables.FBO?.origins || []),
+        ])].sort((a, b) => a.localeCompare(b, 'ru'));
+        fillFbsOriginSelect(origins);
+        localStorage.setItem(LS_LOGISTICS_TABLE, JSON.stringify({
+          version: 1,
+          loadedAt: new Date().toISOString(),
+          FBS: state.logisticsTables.FBS,
+          FBO: state.logisticsTables.FBO,
+        }));
+      } catch (err) {
+        console.warn('Logistics table load failed', err);
+        try {
+          const raw = localStorage.getItem(LS_LOGISTICS_TABLE);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed?.FBS?.entries) state.logisticsTables.FBS = parsed.FBS;
+            if (parsed?.FBO?.entries) state.logisticsTables.FBO = parsed.FBO;
+            fillFbsOriginSelect(state.logisticsTables.FBS?.origins || []);
+          }
+        } catch (_) {}
+      }
+      schedule();
+      if (state.products.length) state.products.forEach((p) => recalcRow(p.offer_id));
     }
 
     const DEFAULT_PRICE_BANDS = [
@@ -1077,6 +1285,20 @@
       const apiTariff = product?.tariffs?.[scheme] || {};
       const fallback = defaultTariff(vol, scheme, price);
       const tablePct = commissionForPrice(product, scheme, price);
+      const origin = $('fbsOrigin')?.value || '';
+      const logLookup = lookupLogistics(vol, scheme, origin);
+      if (logLookup?.fromTable) {
+        return {
+          commissionPct: tablePct ?? fallback.commissionPct,
+          logistics: logLookup.amount,
+          reverse: apiTariff.reverse ?? fallback.reverse,
+          lastMile: apiTariff.lastMile ?? fallback.lastMile,
+          source: tablePct != null ? 'таблица комиссий 2026' : fallback.source,
+          apiExact: false,
+          logisticsFromTable: true,
+          logisticsLabel: logLookup.label,
+        };
+      }
       return {
         commissionPct: tablePct ?? fallback.commissionPct,
         logistics: apiTariff.logistics ?? fallback.logistics,
@@ -1085,6 +1307,15 @@
         source: tablePct != null ? 'таблица комиссий 2026' : (apiTariff.logistics != null ? 'логистика API' : fallback.source),
         apiExact: !!apiTariff.apiExact,
       };
+    }
+
+    function formatBreakdownHtml(r) {
+      const lines = r.rows.map((row) =>
+        '<li class="flex justify-between gap-6 py-0.5"><span>' + escapeHtml(row.t) + '</span><span class="font-medium tabular-nums">' + rub(row.v) + '</span></li>'
+      ).join('');
+      return '<ul class="mt-2 max-w-md space-y-0">' + lines +
+        '<li class="flex justify-between gap-6 border-t border-slate-200 pt-1 font-semibold"><span>Итого расходы</span><span>' + rub(r.ded + r.costs) + '</span></li></ul>' +
+        '<p class="mt-1 text-[11px] text-slate-400">' + escapeHtml(r.footNote) + '</p>';
     }
 
     function commissionForPrice(product, scheme, price) {
@@ -1307,6 +1538,9 @@
         await loadCommissionTable();
       } catch (_) {}
       try {
+        await loadLogisticsTable();
+      } catch (_) {}
+      try {
         await fetchTariff();
         recalc();
       } catch (_) {}
@@ -1333,6 +1567,7 @@
         extra: Number($('extra')?.value) || 0,
         taxP: $('tax')?.value || 6,
         vatP: $('vatRate')?.value || 0,
+        acqP: $('acquiringRate')?.value,
         taxSystem: $('taxSystem')?.value || 'income',
         mktP: adDrr,
         loc: $('locIndex')?.value || 75,
@@ -1342,17 +1577,30 @@
         vol,
         tariff,
       });
+      const commPct = commissionFromTable(p, scheme, testPrice) ?? tariff.commissionPct;
       const profitEl = document.querySelector('[data-profit="' + offerId + '"]');
       const marginEl = document.querySelector('[data-margin="' + offerId + '"]');
       const roiEl = document.querySelector('[data-roi="' + offerId + '"]');
       const sourceEl = document.querySelector('[data-tariff-source="' + offerId + '"]');
+      const commEl = document.querySelector('[data-commission="' + offerId + '"]');
+      const commSub = document.querySelector('[data-commission-sub="' + offerId + '"]');
+      const breakdownEl = document.querySelector('[data-breakdown-body="' + offerId + '"]');
       if (profitEl) {
         profitEl.textContent = rub(r.net);
         profitEl.className = 'font-semibold ' + (r.net > 0 ? 'text-emerald-600' : r.net < 0 ? 'text-red-600' : 'text-slate-500');
       }
       if (marginEl) marginEl.textContent = pct(r.margin);
       if (roiEl) roiEl.textContent = pct(r.roi);
-      if (sourceEl) sourceEl.textContent = r.tariff.source || '—';
+      if (sourceEl) {
+        const parts = [r.tariff.source, r.tariff.logisticsLabel].filter(Boolean);
+        sourceEl.textContent = parts.join(' · ') || '—';
+      }
+      if (commEl) {
+        commEl.textContent = pct(commPct);
+        commEl.className = 'font-medium ' + (commissionFromTable(p, scheme, testPrice) != null ? 'text-emerald-700' : '');
+      }
+      if (commSub) commSub.textContent = (commissionFromTable(p, scheme, testPrice) != null ? 'таблица 2026' : 'порог / API') + ' · ' + scheme;
+      if (breakdownEl) breakdownEl.innerHTML = formatBreakdownHtml(r);
     }
 
     function setRowScheme(offerId, scheme) {
@@ -1416,8 +1664,8 @@
           priceBadge;
         const commissionCell =
           '<td class="py-3 pr-3 text-xs text-slate-600">' +
-          '<div class="font-medium ' + (tableMatched ? 'text-emerald-700' : '') + '">' + pct(tableComm ?? p.tariffs?.[scheme]?.commissionPct) + '</div>' +
-          '<div class="text-slate-400">' + (tableMatched ? 'таблица 2026 · ' + scheme : 'порог / API') + '</div>' +
+          '<div class="font-medium ' + (tableMatched ? 'text-emerald-700' : '') + '" data-commission="' + oid + '">' + pct(tableComm ?? p.tariffs?.[scheme]?.commissionPct) + '</div>' +
+          '<div class="text-slate-400" data-commission-sub="' + oid + '">' + (tableMatched ? 'таблица 2026 · ' + scheme : 'порог / API') + '</div>' +
           '</td>';
         tr.innerHTML =
           '<td class="py-3 pr-3"><div class="flex min-w-[260px] items-center gap-3">' + imageHtml + '<div><div class="font-medium">' + escapeHtml(p.name) + '</div><div class="text-xs text-slate-400">' + escapeHtml(oid) + '</div><div class="text-[11px] text-slate-400">' + escapeHtml([p.categoryName, p.typeName].filter(Boolean).join(' › ')) + '</div><div class="text-[11px] text-slate-400" data-tariff-source="' + oid + '">—</div></div></div></td>' +
@@ -1435,6 +1683,13 @@
           '<td class="py-3 pr-3" data-margin="' + oid + '">—</td>' +
           '<td class="py-3" data-roi="' + oid + '">—</td>';
         tbody.appendChild(tr);
+        const detailTr = document.createElement('tr');
+        detailTr.className = 'border-b border-slate-50 bg-slate-50/40';
+        detailTr.innerHTML =
+          '<td colspan="11" class="px-3 pb-3 pt-0">' +
+          '<details class="text-xs"><summary class="cursor-pointer text-slate-500 hover:text-ozon">Расчёт по строкам</summary>' +
+          '<div class="pt-2" data-breakdown-body="' + oid + '"></div></details></td>';
+        tbody.appendChild(detailTr);
       });
       tbody.querySelectorAll('[data-cost]').forEach((inp) => {
         inp.addEventListener('input', () => {
@@ -1536,7 +1791,9 @@
         b.classList.toggle('border-slate-200', !on);
         b.classList.toggle('text-slate-600', !on);
       });
+      updateSchemeUi();
       schedule();
+      state.products.forEach((p) => recalcRow(p.offer_id));
     }
 
     function initTabs() {
@@ -1562,7 +1819,7 @@
 
     function bind() {
       initTabs();
-      'len,wid,hei,weight,purchase,extra,price,priceRange,tax,vatRate,marketing,locIndex,returns,premium'.split(',').forEach((id) => {
+      'len,wid,hei,weight,purchase,extra,price,priceRange,tax,vatRate,acquiringRate,marketing,locIndex,returns,premium'.split(',').forEach((id) => {
         const el = $(id);
         if (!el) return;
         el.addEventListener('input', () => {
@@ -1575,8 +1832,9 @@
           else {
             if (id === 'tax') localStorage.setItem(LS_TAX_RATE, el.value);
             if (id === 'vatRate') localStorage.setItem(LS_VAT_RATE, el.value);
+            if (id === 'acquiringRate') localStorage.setItem(LS_ACQUIRING_RATE, el.value);
             recalc();
-            if (['tax', 'vatRate', 'marketing', 'locIndex', 'returns', 'extra'].includes(id)) {
+            if (['tax', 'vatRate', 'acquiringRate', 'marketing', 'locIndex', 'returns', 'extra'].includes(id)) {
               if (id === 'marketing') {
                 document.querySelectorAll('[data-ad-drr]').forEach((inp) => {
                   if (!localStorage.getItem('ad_drr_' + inp.dataset.adDrr)) inp.value = el.value;
@@ -1613,6 +1871,15 @@
         state.assortSearch = e.target.value;
         renderAssortment();
       });
+      $('fbsOrigin')?.addEventListener('change', () => {
+        localStorage.setItem(LS_FBS_ORIGIN, $('fbsOrigin').value);
+        schedule();
+        state.products.forEach((p) => recalcRow(p.offer_id));
+      });
+      $('fboSameCluster')?.addEventListener('change', () => {
+        schedule();
+        state.products.forEach((p) => recalcRow(p.offer_id));
+      });
     }
 
     async function init() {
@@ -1624,11 +1891,14 @@
         $('taxSystem').value = localStorage.getItem(LS_TAX_SYSTEM) || 'income';
         $('tax').value = localStorage.getItem(LS_TAX_RATE) || ($('taxSystem').value === 'profit' ? '15' : $('taxSystem').value === 'vat' ? '20' : '6');
         $('vatRate').value = localStorage.getItem(LS_VAT_RATE) ?? '0';
+        $('acquiringRate').value = localStorage.getItem(LS_ACQUIRING_RATE) ?? String(DEFAULT_ACQUIRING);
         state.tariff = defaultTariff(ceilL(30, 25, 8), 'FBO', 2490);
         bind();
+        updateSchemeUi();
         setScheme('FBO');
         recalc();
         loadCommissionTable().catch(() => {});
+        loadLogisticsTable().catch(() => {});
         await loadAssortment();
         if (cid && key) await connect();
         else schedule();
