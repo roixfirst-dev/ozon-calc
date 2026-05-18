@@ -103,11 +103,7 @@
             <input id="fboSameCluster" type="checkbox" class="rounded border-slate-300 text-ozon" />
             <span class="text-slate-600">FBO: заказ в том же кластере (мин. тариф)</span>
           </label>
-          <label class="block text-sm">
-            <span class="text-slate-500">Эквайринг, %</span>
-            <input id="acquiringRate" type="number" min="0" max="10" step="0.1" value="1.5" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" />
-            <p class="mt-1 text-xs text-slate-400">Комиссия за приём оплаты с каждой продажи (по умолчанию 1,5%).</p>
-          </label>
+          <p id="logisticsHint" class="hidden text-xs text-amber-700"></p>
 
           <label class="block text-sm">
             <div class="flex justify-between"><span>Цена продажи</span><span id="priceDisplay" class="font-semibold text-ozon">2 490 ₽</span></div>
@@ -228,14 +224,14 @@
     const LS_TAX_SYSTEM = 'ozon_ue_tax_system';
     const LS_TAX_RATE = 'ozon_ue_tax_rate';
     const LS_VAT_RATE = 'ozon_ue_vat_rate';
-    const LS_ACQUIRING_RATE = 'ozon_ue_acquiring_rate';
+    const LS_FBO_SAME_CLUSTER = 'ozon_ue_fbo_same_cluster';
     const LS_FBS_ORIGIN = 'ozon_ue_fbs_origin';
     const LS_LOGISTICS_TABLE = 'ozon_ue_logistics_table';
     const LS_COMMISSION_TABLE = 'ozon_ue_commission_table_2026';
     const COMMISSION_SHEET_ID = '1Kh31uRcKJJ5SU-TZHBtsBlZ4W4SH9QzT1eJA78dcBtY';
     const LOGISTICS_SHEET_ID = '1FNqyAsIcI3wCrVvqnQmo1gEWdOzsp00Z64eKhpNgy7Y';
     const COMMISSION_TABLE_URL = 'unit.xlsx';
-    const DEFAULT_ACQUIRING = 1.5;
+    const ACQUIRING_RATE = 1.5;
     const FBS_FEE = 35;
     const PREMIUM = 2.5;
     const LAST_MILE = 25;
@@ -243,7 +239,8 @@
     const state = {
       connected: false, scheme: 'FBO', categoryTypes: [], selectedType: null,
       tariff: null, tariffSource: 'базовые тарифы Ozon', products: [], rowSchemes: {},
-      apiOk: false, lastApiError: '', apiLog: [],       commissionTable: null, logisticsTables: { FBS: null, FBO: null },
+      apiOk: false, lastApiError: '', apiLog: [], commissionTable: null,
+      logisticsTables: { FBS: null, FBO: null }, logisticsReady: false, logisticsError: '',
       categoryTypeById: new Map(),
       assortSearch: '', dataLoading: false,
     };
@@ -397,7 +394,7 @@
       const extra = Number(opts.extra) || 0;
       const taxP = Number(opts.taxP ?? 6) || 0;
       const vatP = Number(opts.vatP ?? 0) || 0;
-      const acqP = Number(opts.acqP ?? DEFAULT_ACQUIRING) || 0;
+      const acqP = ACQUIRING_RATE;
       const taxSystem = opts.taxSystem || 'income';
       const mktP = Number(opts.mktP ?? 8) || 0;
       const loc = Number(opts.loc ?? 75) || 0;
@@ -636,7 +633,6 @@
         extra: $('extra').value,
         taxP: $('tax').value,
         vatP: $('vatRate').value,
-        acqP: $('acquiringRate')?.value,
         taxSystem: $('taxSystem').value,
         mktP: $('marketing').value,
         loc: $('locIndex').value,
@@ -842,8 +838,22 @@
 
     function parseMoneyCell(value) {
       if (value == null || value === '') return null;
-      const n = Number(String(value).replace(/\s/g, '').replace(',', '.').replace(/[^\d.-]/g, ''));
-      return Number.isFinite(n) ? n : null;
+      const s = String(value).replace(/\s/g, '').replace(/₽/g, '').replace(',', '.');
+      const m = s.match(/\d+(?:\.\d+)?/);
+      if (!m) return null;
+      const n = parseFloat(m[0]);
+      return Number.isFinite(n) && n >= 0 ? n : null;
+    }
+
+    function rowLogisticsPrice(r, priceCol) {
+      let price = parseMoneyCell(r[priceCol]);
+      if (price != null) return price;
+      let max = null;
+      for (let c = 3; c < r.length; c++) {
+        const v = parseMoneyCell(r[c]);
+        if (v != null && (max == null || v > max)) max = v;
+      }
+      return max;
     }
 
     function parseVolumeBandCell(text) {
@@ -859,31 +869,52 @@
     }
 
     function parseLogisticsRows(rows) {
-      const headerRow = rows.findIndex((r) => {
+      const nonEmpty = (rows || []).filter((r) => (r || []).some((c) => String(c || '').trim()));
+      const headerRow = nonEmpty.findIndex((r) => {
         const a = normalizeText(r[0]);
-        return a.includes('объем') || a.includes('объём') || a.includes('литр');
+        const b = normalizeText(r[1]);
+        return a.includes('объем') || a.includes('литр') || b.includes('кластер');
       });
-      if (headerRow < 0) throw new Error('Не найдена колонка «Объём товара» в таблице логистики');
+      if (headerRow < 0) {
+        throw new Error('Не найдена строка заголовков (колонки «Объём», «Кластер…»). Первая строка: ' + JSON.stringify((nonEmpty[0] || []).slice(0, 4)));
+      }
+      const headerCells = nonEmpty[headerRow] || [];
+      let priceCol = 3;
+      headerCells.forEach((cell, idx) => {
+        const t = normalizeText(cell);
+        if (t.includes('тариф') || t.includes('стоим') || t.includes('цена') || t.includes('руб') || t.includes('логист')) {
+          priceCol = idx;
+        }
+      });
       const entries = [];
       const origins = new Set();
-      for (let i = headerRow + 1; i < rows.length; i++) {
-        const r = rows[i] || [];
+      let skippedNoPrice = 0;
+      for (let i = headerRow + 1; i < nonEmpty.length; i++) {
+        const r = nonEmpty[i] || [];
         const band = parseVolumeBandCell(r[0]);
         const origin = String(r[1] || '').trim();
         const dest = String(r[2] || '').trim();
-        let price = parseMoneyCell(r[3]);
+        const price = rowLogisticsPrice(r, priceCol);
+        if (!band || !origin || !dest) continue;
         if (price == null) {
-          for (let c = 3; c < r.length; c++) {
-            price = parseMoneyCell(r[c]);
-            if (price != null) break;
-          }
+          skippedNoPrice++;
+          continue;
         }
-        if (!band || !origin || !dest || price == null) continue;
         entries.push({ volMin: band.min, volMax: band.max, origin, dest, price });
         origins.add(origin);
       }
-      if (!entries.length) throw new Error('В таблице логистики нет строк с тарифами');
-      return { entries, origins: [...origins].sort((a, b) => a.localeCompare(b, 'ru')) };
+      if (!entries.length) {
+        const hdr = headerCells.slice(0, 6).join(' | ');
+        throw new Error(
+          'Таблица загружена, но нет тарифов в ₽. Проверьте 4-ю колонку (или колонку «Тариф»). ' +
+          'Заголовки: ' + hdr + '. Пропущено строк без цены: ' + skippedNoPrice
+        );
+      }
+      return {
+        entries,
+        origins: [...origins].sort((a, b) => a.localeCompare(b, 'ru')),
+        rowCount: entries.length,
+      };
     }
 
     function lookupLogistics(vol, scheme, originCluster) {
@@ -929,14 +960,33 @@
       if (!sel) return;
       const saved = localStorage.getItem(LS_FBS_ORIGIN) || '';
       sel.innerHTML = '';
-      (origins || []).forEach((o) => {
+      if (!origins?.length) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = '— таблица не загружена —';
+        sel.appendChild(opt);
+        return;
+      }
+      origins.forEach((o) => {
         const opt = document.createElement('option');
         opt.value = o;
         opt.textContent = o;
         sel.appendChild(opt);
       });
       if (saved && origins.includes(saved)) sel.value = saved;
-      else if (origins.length) sel.value = origins[0];
+      else sel.value = origins[0];
+    }
+
+    function setLogisticsHint(msg) {
+      const el = $('logisticsHint');
+      if (!el) return;
+      if (msg) {
+        el.textContent = msg;
+        el.classList.remove('hidden');
+      } else {
+        el.textContent = '';
+        el.classList.add('hidden');
+      }
     }
 
     function updateSchemeUi() {
@@ -945,58 +995,158 @@
       $('fboClusterWrap')?.classList.toggle('hidden', fbs);
     }
 
+    async function fetchLogisticsSheetRows(sheetName) {
+      const tries = [
+        { action: 'getCommissionSheet', spreadsheetId: LOGISTICS_SHEET_ID, sheetName, skipCache: true },
+        { action: 'getSpreadsheet', spreadsheetId: LOGISTICS_SHEET_ID, sheetName, skipCache: true },
+        { action: 'getCommissionSheet', spreadsheetId: LOGISTICS_SHEET_ID, skipCache: true },
+      ];
+      let lastErr = '';
+      for (const payload of tries) {
+        if (!sheetName && payload.sheetName) continue;
+        try {
+          const result = await proxyCall(payload);
+          if (!result.ok) {
+            lastErr = result.error || 'HTTP ' + result.status;
+            continue;
+          }
+          const rows = result.data?.rows;
+          if (Array.isArray(rows) && rows.length) return rows;
+          lastErr = 'Пустой лист';
+        } catch (e) {
+          lastErr = e?.message || String(e);
+        }
+      }
+      throw new Error(lastErr || 'Не удалось прочитать таблицу логистики');
+    }
+
     async function loadLogisticsSheetByName(sheetName) {
-      const result = await proxyCall({
-        action: 'getSpreadsheet',
-        spreadsheetId: LOGISTICS_SHEET_ID,
-        sheetName,
-        skipCache: true,
-      });
-      if (!result.ok) throw new Error(result.error || 'Ошибка загрузки логистики');
-      const rows = result.data?.rows;
-      if (!Array.isArray(rows) || !rows.length) throw new Error('Пустой лист логистики: ' + sheetName);
+      const rows = await fetchLogisticsSheetRows(sheetName);
       return parseLogisticsRows(rows);
     }
 
-    async function loadLogisticsTable() {
-      try {
-        const listRes = await proxyCall({ action: 'listSpreadsheetSheets', spreadsheetId: LOGISTICS_SHEET_ID });
-        const names = listRes.data?.sheets || ['Лист1'];
-        const fbsName = names.find((n) => /fbs/i.test(n)) || names[0];
-        const fboName = names.find((n) => /fbo/i.test(n)) || names.find((n) => n !== fbsName) || names[0];
-        state.logisticsTables.FBS = await loadLogisticsSheetByName(fbsName);
-        state.logisticsTables.FBS.sheetName = fbsName;
+    async function loadLogisticsFromPublicCsv() {
+      const urls = [
+        'https://docs.google.com/spreadsheets/d/' + LOGISTICS_SHEET_ID + '/export?format=csv&gid=0',
+        'https://docs.google.com/spreadsheets/d/' + LOGISTICS_SHEET_ID + '/gviz/tq?tqx=out:csv&sheet=' + encodeURIComponent('Лист1'),
+        'https://docs.google.com/spreadsheets/d/' + LOGISTICS_SHEET_ID + '/gviz/tq?tqx=out:csv',
+      ];
+      let lastErr = '';
+      for (const url of urls) {
         try {
-          state.logisticsTables.FBO = await loadLogisticsSheetByName(fboName);
-          state.logisticsTables.FBO.sheetName = fboName;
-        } catch (_) {
-          state.logisticsTables.FBO = state.logisticsTables.FBS;
+          const res = await fetch(url, { cache: 'no-store', mode: 'cors' });
+          const text = await res.text();
+          if (!res.ok || text.trim().startsWith('<')) {
+            lastErr = 'HTTP ' + res.status;
+            continue;
+          }
+          return parseLogisticsRows(parseCsvRows(text));
+        } catch (e) {
+          lastErr = e?.message || String(e);
         }
-        const origins = [...new Set([
-          ...(state.logisticsTables.FBS?.origins || []),
-          ...(state.logisticsTables.FBO?.origins || []),
-        ])].sort((a, b) => a.localeCompare(b, 'ru'));
-        fillFbsOriginSelect(origins);
+      }
+      throw new Error('Публичный CSV недоступен' + (lastErr ? ': ' + lastErr : ''));
+    }
+
+    async function applyLogisticsRecalc() {
+      await fetchTariff();
+      recalc();
+      state.products.forEach((p) => recalcRow(p.offer_id));
+    }
+
+    async function loadLogisticsFromGoogleSheet() {
+      const result = await proxyCall({
+        action: 'getCommissionSheet',
+        spreadsheetId: LOGISTICS_SHEET_ID,
+        skipCache: true,
+      });
+      if (!result.ok) {
+        throw new Error(result.error || result.raw?.error || ('HTTP ' + result.status));
+      }
+      const rows = result.data?.rows;
+      if (!Array.isArray(rows) || !rows.length) {
+        throw new Error('Apps Script вернул пустую таблицу логистики');
+      }
+      const table = parseLogisticsRows(rows);
+      table.source = 'google-sheet';
+      table.sheetName = result.data.sheetName || '';
+      return table;
+    }
+
+    async function loadLogisticsTable() {
+      state.logisticsReady = false;
+      state.logisticsError = '';
+      let loaded = false;
+      let lastErr = '';
+
+      try {
+        state.logisticsTables.FBS = await loadLogisticsFromGoogleSheet();
+        state.logisticsTables.FBO = state.logisticsTables.FBS;
+        try {
+          const listRes = await proxyCall({ action: 'listSpreadsheetSheets', spreadsheetId: LOGISTICS_SHEET_ID });
+          const names = listRes.ok ? listRes.data?.sheets || [] : [];
+          const fboName = names.find((n) => /fbo/i.test(n));
+          const fbsName = state.logisticsTables.FBS.sheetName || names.find((n) => /fbs/i.test(n)) || names[0];
+          if (fboName && fboName !== fbsName) {
+            state.logisticsTables.FBO = await loadLogisticsSheetByName(fboName);
+            state.logisticsTables.FBO.sheetName = fboName;
+          }
+        } catch (_) {}
+        loaded = true;
+      } catch (sheetErr) {
+        lastErr = sheetErr?.message || String(sheetErr);
+        console.warn('Logistics Google Sheet failed', sheetErr);
+      }
+
+      if (!loaded) {
+        try {
+          state.logisticsTables.FBS = await loadLogisticsFromPublicCsv();
+          state.logisticsTables.FBS.source = 'public-csv';
+          state.logisticsTables.FBO = state.logisticsTables.FBS;
+          loaded = true;
+        } catch (csvErr) {
+          lastErr = (lastErr ? lastErr + ' · ' : '') + (csvErr?.message || csvErr);
+          try {
+            const raw = localStorage.getItem(LS_LOGISTICS_TABLE);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (parsed?.FBS?.entries?.length) {
+                state.logisticsTables.FBS = parsed.FBS;
+                state.logisticsTables.FBO = parsed.FBO || parsed.FBS;
+                loaded = true;
+              }
+            }
+          } catch (_) {}
+        }
+      }
+
+      if (!loaded) {
+        state.logisticsError = lastErr || 'Не удалось загрузить таблицу логистики';
+      }
+      const origins = [...new Set([
+        ...(state.logisticsTables.FBS?.origins || []),
+        ...(state.logisticsTables.FBO?.origins || []),
+      ])].sort((a, b) => a.localeCompare(b, 'ru'));
+      fillFbsOriginSelect(origins);
+      state.logisticsReady = !!(state.logisticsTables.FBS?.entries?.length);
+      if (state.logisticsReady) {
         localStorage.setItem(LS_LOGISTICS_TABLE, JSON.stringify({
           version: 1,
           loadedAt: new Date().toISOString(),
           FBS: state.logisticsTables.FBS,
           FBO: state.logisticsTables.FBO,
         }));
-      } catch (err) {
-        console.warn('Logistics table load failed', err);
-        try {
-          const raw = localStorage.getItem(LS_LOGISTICS_TABLE);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (parsed?.FBS?.entries) state.logisticsTables.FBS = parsed.FBS;
-            if (parsed?.FBO?.entries) state.logisticsTables.FBO = parsed.FBO;
-            fillFbsOriginSelect(state.logisticsTables.FBS?.origins || []);
-          }
-        } catch (_) {}
+        const n = state.logisticsTables.FBS.rowCount || state.logisticsTables.FBS.entries.length;
+        const m = (state.logisticsTables.FBS.origins || []).length;
+        setLogisticsHint('Логистика: ' + n + ' тарифов, ' + m + ' кластеров отгрузки (' + (state.logisticsTables.FBS.source || 'таблица') + ').');
+        $('logisticsHint')?.classList.remove('text-amber-700');
+        $('logisticsHint')?.classList.add('text-emerald-700');
+      } else {
+        $('logisticsHint')?.classList.remove('text-emerald-700');
+        $('logisticsHint')?.classList.add('text-amber-700');
+        setLogisticsHint(state.logisticsError || 'Таблица логистики не загружена.');
       }
-      schedule();
-      if (state.products.length) state.products.forEach((p) => recalcRow(p.offer_id));
+      await applyLogisticsRecalc();
     }
 
     const DEFAULT_PRICE_BANDS = [
@@ -1567,7 +1717,6 @@
         extra: Number($('extra')?.value) || 0,
         taxP: $('tax')?.value || 6,
         vatP: $('vatRate')?.value || 0,
-        acqP: $('acquiringRate')?.value,
         taxSystem: $('taxSystem')?.value || 'income',
         mktP: adDrr,
         loc: $('locIndex')?.value || 75,
@@ -1819,7 +1968,7 @@
 
     function bind() {
       initTabs();
-      'len,wid,hei,weight,purchase,extra,price,priceRange,tax,vatRate,acquiringRate,marketing,locIndex,returns,premium'.split(',').forEach((id) => {
+      'len,wid,hei,weight,purchase,extra,price,priceRange,tax,vatRate,marketing,locIndex,returns,premium'.split(',').forEach((id) => {
         const el = $(id);
         if (!el) return;
         el.addEventListener('input', () => {
@@ -1832,9 +1981,8 @@
           else {
             if (id === 'tax') localStorage.setItem(LS_TAX_RATE, el.value);
             if (id === 'vatRate') localStorage.setItem(LS_VAT_RATE, el.value);
-            if (id === 'acquiringRate') localStorage.setItem(LS_ACQUIRING_RATE, el.value);
             recalc();
-            if (['tax', 'vatRate', 'acquiringRate', 'marketing', 'locIndex', 'returns', 'extra'].includes(id)) {
+            if (['tax', 'vatRate', 'marketing', 'locIndex', 'returns', 'extra'].includes(id)) {
               if (id === 'marketing') {
                 document.querySelectorAll('[data-ad-drr]').forEach((inp) => {
                   if (!localStorage.getItem('ad_drr_' + inp.dataset.adDrr)) inp.value = el.value;
@@ -1873,12 +2021,11 @@
       });
       $('fbsOrigin')?.addEventListener('change', () => {
         localStorage.setItem(LS_FBS_ORIGIN, $('fbsOrigin').value);
-        schedule();
-        state.products.forEach((p) => recalcRow(p.offer_id));
+        applyLogisticsRecalc();
       });
       $('fboSameCluster')?.addEventListener('change', () => {
-        schedule();
-        state.products.forEach((p) => recalcRow(p.offer_id));
+        localStorage.setItem(LS_FBO_SAME_CLUSTER, $('fboSameCluster').checked ? '1' : '0');
+        applyLogisticsRecalc();
       });
     }
 
@@ -1891,7 +2038,7 @@
         $('taxSystem').value = localStorage.getItem(LS_TAX_SYSTEM) || 'income';
         $('tax').value = localStorage.getItem(LS_TAX_RATE) || ($('taxSystem').value === 'profit' ? '15' : $('taxSystem').value === 'vat' ? '20' : '6');
         $('vatRate').value = localStorage.getItem(LS_VAT_RATE) ?? '0';
-        $('acquiringRate').value = localStorage.getItem(LS_ACQUIRING_RATE) ?? String(DEFAULT_ACQUIRING);
+        if (localStorage.getItem(LS_FBO_SAME_CLUSTER) === '1') $('fboSameCluster').checked = true;
         state.tariff = defaultTariff(ceilL(30, 25, 8), 'FBO', 2490);
         bind();
         updateSchemeUi();
