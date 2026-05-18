@@ -34,16 +34,19 @@
           <p class="text-xs text-slate-500">Калькулятор маржи и ROI</p>
         </div>
       </div>
-      <div id="statusBadge" class="flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-sm text-slate-500">
-        <span class="h-2 w-2 rounded-full bg-slate-400"></span>
-        <span id="statusText">Офлайн-тарифы</span>
+      <div class="flex items-center gap-2">
+        <button id="btnApiSettings" type="button" class="hidden rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm hover:bg-slate-50">Настройки API</button>
+        <div id="statusBadge" class="flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-sm text-slate-500">
+          <span class="h-2 w-2 rounded-full bg-slate-400"></span>
+          <span id="statusText">Офлайн-тарифы</span>
+        </div>
       </div>
     </div>
   </header>
 
   <main class="mx-auto max-w-7xl space-y-6 px-4 py-6">
 
-    <section class="rounded-2xl border border-slate-100 bg-white p-5 shadow-lg">
+    <section id="authSection" class="rounded-2xl border border-slate-100 bg-white p-5 shadow-lg">
       <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Ozon Seller API</h2>
       <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <label class="block text-sm">
@@ -60,12 +63,6 @@
         </div>
       </div>
     </section>
-
-    <div id="corsBanner" class="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-950 shadow-sm">
-      <p class="font-semibold">Интеграция Ozon работает через back-to-back прокси Apps Script</p>
-      <p class="mt-1">Браузер не обращается к Seller API напрямую: каждый запрос отправляется на <code class="rounded bg-blue-100 px-1">CORS_PROXY</code>, а Apps Script уже подставляет ключи в серверные заголовки.</p>
-      <p class="mt-2 text-xs text-blue-800">Если данные не грузятся, проверьте URL опубликованного Apps Script в константе <code class="rounded bg-blue-100 px-1">CORS_PROXY</code> и доступ деплоя «Anyone».</p>
-    </div>
 
     <nav class="flex flex-wrap gap-2">
       <button type="button" class="tab-btn active rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium shadow-sm" data-tab="tab-calc">🧮 Быстрый калькулятор</button>
@@ -172,6 +169,10 @@
           <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Ассортимент</h2>
           <p id="assortHint" class="text-xs text-slate-500">Демо-товары (подключите API для загрузки)</p>
         </div>
+        <label class="mb-4 block text-sm">
+          <span class="sr-only">Поиск по названию</span>
+          <input id="assortSearch" type="search" autocomplete="off" placeholder="Поиск по названию или артикулу…" class="w-full max-w-md rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-ozon focus:outline-none focus:ring-2 focus:ring-ozon/20" />
+        </label>
         <div class="mb-4 rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-950">
           <p class="font-semibold">Таблица комиссий Ozon 2026</p>
           <p id="commissionHint" class="mt-1 text-xs text-blue-800">Таблица комиссий загружается через Apps Script из вашей Google-таблицы (без публикации в интернет).</p>
@@ -183,7 +184,7 @@
               <tr>
                 <th class="py-2 pr-3">Товар</th>
                 <th class="py-2 pr-3">Остаток</th>
-                <th class="py-2 pr-3">Комиссия API</th>
+                <th class="py-2 pr-3">Комиссия %</th>
                 <th class="py-2 pr-3">Себест.</th>
                 <th class="py-2 pr-3">Цена Ozon</th>
                 <th class="py-2 pr-3">Тест-цена</th>
@@ -224,6 +225,7 @@
       connected: false, scheme: 'FBO', categoryTypes: [], selectedType: null,
       tariff: null, tariffSource: 'базовые тарифы Ozon', products: [], rowSchemes: {},
       apiOk: false, lastApiError: '', apiLog: [], commissionTable: null, categoryTypeById: new Map(),
+      assortSearch: '', dataLoading: false,
     };
     let debounce = null;
 
@@ -559,45 +561,25 @@
     async function fetchTariff() {
       const p = payload();
       const price = Number($('price').value) || 0;
-      if (!state.connected) {
-        state.tariff = defaultTariff(p.volume_liters, state.scheme, price);
-        state.tariffSource = state.tariff.source;
-        return;
-      }
-      let t = null;
-      for (const ep of [
-        ['/v1/products/prices-info', p],
-      ]) {
-        try {
-          const { ok, data } = await apiPost(ep[0], ep[1]);
-          if (!ok) continue;
-          const cp = Number(data.commission_percent ?? data.sales_percent);
-          const lg = Number(data.logistics ?? data.logistics_amount);
-          if (cp > 0 || lg >= 0) {
-            t = { commissionPct: cp || null, logistics: lg || null, reverse: Number(data.return_amount) || null, lastMile: null, source: ep[0] };
-            if (cp && lg >= 0) break;
-          }
-        } catch (_) {}
-      }
-      if (!t?.commissionPct) {
-        try {
-          const list = await apiPost('/v3/product/list', { filter: { visibility: 'ALL' }, limit: 100 });
-          const ids = (list.data?.result?.items || []).map((i) => i.product_id).filter(Boolean);
-          if (list.ok && ids.length) {
-            const pr = await apiPost('/v5/product/info/prices', { filter: { product_id: ids.slice(0, 15), visibility: 'ALL' }, limit: 15 });
-            const parsed = parseV5(pr.data, state.scheme);
-            if (parsed?.commissionPct) t = { ...parsed, source: '/v5/product/info/prices' };
-          }
-        } catch (_) {}
-      }
-      const d = defaultTariff(p.volume_liters, state.scheme, price);
+      const vol = p.volume_liters;
+      const scheme = state.scheme;
+      const d = defaultTariff(vol, scheme, price);
+      const product = productFromSelectedCategory();
+      const tablePct = product ? commissionFromTable(product, scheme, price) : null;
+      let logistics = d.logistics;
+      let reverse = d.reverse;
+      let lastMile = d.lastMile;
+      let apiExact = false;
+      let logisticsSource = d.source;
+
       state.tariff = {
-        commissionPct: t?.commissionPct ?? d.commissionPct,
-        logistics: t?.logistics ?? d.logistics,
-        reverse: t?.reverse ?? d.reverse,
-        lastMile: t?.lastMile ?? d.lastMile,
-        source: t?.source ?? d.source,
-        apiExact: !!t?.apiExact,
+        commissionPct: tablePct ?? d.commissionPct,
+        logistics,
+        reverse,
+        lastMile,
+        source: tablePct != null ? 'таблица комиссий 2026' : d.source,
+        apiExact,
+        logisticsSource,
       };
       state.tariffSource = state.tariff.source;
     }
@@ -652,9 +634,11 @@
       if (on) {
         el.className = 'flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700';
         el.innerHTML = '<span class="h-2 w-2 rounded-full bg-emerald-500"></span><span id="statusText">Подключено</span>';
+        setAuthPanelVisible(false);
       } else {
         el.className = 'flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-sm text-slate-500';
         el.innerHTML = '<span class="h-2 w-2 rounded-full bg-slate-400"></span><span id="statusText">' + (err || 'Офлайн-тарифы') + '</span>';
+        setAuthPanelVisible(true);
       }
     }
 
@@ -669,6 +653,30 @@
         if (Number.isFinite(n) && n > 0) return n;
       }
       return null;
+    }
+
+    function isMeaningfulDiscount(regular, promo) {
+      if (!regular || !promo || promo >= regular) return false;
+      const diff = regular - promo;
+      return diff >= 50 || diff / regular >= 0.03;
+    }
+
+    function productFromSelectedCategory() {
+      if (!state.selectedType) return null;
+      const parts = state.selectedType.label.split(' › ');
+      return {
+        commissionCategory: parts[0] || '',
+        commissionType: parts[parts.length - 1] || '',
+        categoryName: parts[0] || '',
+        typeName: parts[parts.length - 1] || '',
+      };
+    }
+
+    function setAuthPanelVisible(show) {
+      const section = $('authSection');
+      const btn = $('btnApiSettings');
+      if (section) section.classList.toggle('hidden', !show);
+      if (btn) btn.classList.toggle('hidden', show);
     }
     function sumNums(...values) {
       return values.reduce((sum, v) => {
@@ -719,34 +727,28 @@
       const regularPrice = num(price.price, row.price);
       const oldPrice = num(price.old_price, row.old_price);
       const sellerAction = num(price.marketing_seller_price, row.marketing_seller_price);
-      const minPrice = num(price.min_price, row.min_price);
 
       const actionFromList = actions
         .map((a) => num(a.value, a.price, a.action_price))
-        .filter((n) => n != null && regularPrice && n < regularPrice);
+        .filter((n) => n != null && regularPrice && isMeaningfulDiscount(regularPrice, n));
       const lowestAction = actionFromList.length ? Math.min(...actionFromList) : null;
 
       const basePrice =
         oldPrice && regularPrice && oldPrice > regularPrice ? oldPrice : (regularPrice || oldPrice || 0);
 
       let actionPrice = null;
-      if (sellerAction && regularPrice && sellerAction < regularPrice) actionPrice = sellerAction;
-      else if (lowestAction) actionPrice = lowestAction;
-      else if (minPrice && regularPrice && minPrice < regularPrice) actionPrice = minPrice;
+      if (sellerAction && regularPrice && isMeaningfulDiscount(regularPrice, sellerAction)) {
+        actionPrice = sellerAction;
+      } else if (lowestAction) {
+        actionPrice = lowestAction;
+      }
 
-      const isPromo = !!(
-        actionPrice ||
-        (oldPrice && regularPrice && oldPrice > regularPrice) ||
-        actions.length > 0
-      );
-
-      const sellingPrice = actionPrice || regularPrice || sellerAction || minPrice || 0;
+      const isPromo = !!actionPrice;
+      const sellingPrice = actionPrice || regularPrice || 0;
 
       let source = 'обычная цена';
       if (actionPrice && sellerAction && actionPrice === sellerAction) source = 'акционная цена продавца';
       else if (actionPrice && lowestAction && actionPrice === lowestAction) source = 'акция продавца (кампания)';
-      else if (oldPrice && regularPrice && oldPrice > regularPrice) source = 'скидка от зачёркнутой цены';
-      else if (actions.length) source = 'есть маркетинговые акции';
 
       return {
         price: sellingPrice,
@@ -987,6 +989,42 @@
       applyCommissionTable(parseCommissionWorkbook(wb));
     }
 
+    function parseCsvRows(text) {
+      const rows = [];
+      for (const line of text.split(/\r?\n/)) {
+        if (!line.trim()) continue;
+        const cells = [];
+        let cur = '';
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+          const ch = line[i];
+          if (ch === '"') {
+            inQuotes = !inQuotes;
+            continue;
+          }
+          if (ch === ',' && !inQuotes) {
+            cells.push(cur);
+            cur = '';
+            continue;
+          }
+          cur += ch;
+        }
+        cells.push(cur);
+        rows.push(cells);
+      }
+      return rows;
+    }
+
+    async function loadCommissionFromPublicCsv() {
+      const url = 'https://docs.google.com/spreadsheets/d/' + COMMISSION_SHEET_ID + '/export?format=csv&gid=0';
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) throw new Error('Не удалось скачать CSV (' + res.status + ')');
+      const table = parseCommissionRows(parseCsvRows(await res.text()));
+      table.source = 'google-sheet-csv';
+      applyCommissionTable(table);
+      return table;
+    }
+
     async function loadCommissionFromGoogleSheet(skipCache) {
       const result = await proxyCall({
         action: 'getCommissionSheet',
@@ -1047,6 +1085,13 @@
         console.warn('Google Sheet commission load failed', sheetErr);
       }
       try {
+        if (hint) hint.textContent = 'Загружаю таблицу по публичной ссылке CSV…';
+        await loadCommissionFromPublicCsv();
+        return;
+      } catch (csvErr) {
+        console.warn('Public CSV commission load failed', csvErr);
+      }
+      try {
         if (hint) hint.textContent = 'Загружаю unit.xlsx (запасной вариант)...';
         const res = await fetch(COMMISSION_TABLE_URL, { cache: 'no-store' });
         if (!res.ok) throw new Error('unit.xlsx не найден');
@@ -1062,26 +1107,26 @@
     }
 
     function getProductTariff(product, scheme, vol, price) {
-      const apiTariff = { ...(product?.tariffs?.[scheme] || {}), product };
+      const apiTariff = product?.tariffs?.[scheme] || {};
       const fallback = defaultTariff(vol, scheme, price);
-      const commissionPct = commissionForPrice(apiTariff, scheme, price);
+      const tablePct = commissionForPrice(product, scheme, price);
       return {
-        commissionPct: commissionPct ?? fallback.commissionPct,
+        commissionPct: tablePct ?? fallback.commissionPct,
         logistics: apiTariff.logistics ?? fallback.logistics,
         reverse: apiTariff.reverse ?? fallback.reverse,
         lastMile: apiTariff.lastMile ?? fallback.lastMile,
-        source: apiTariff.source || fallback.source,
+        source: tablePct != null ? 'таблица комиссий 2026' : (apiTariff.logistics != null ? 'логистика API' : fallback.source),
         apiExact: !!apiTariff.apiExact,
       };
     }
 
-    function commissionForPrice(apiTariff, scheme, price) {
-      const tablePct = commissionFromTable(apiTariff.product, scheme, price);
+    function commissionForPrice(product, scheme, price) {
+      const tablePct = commissionFromTable(product, scheme, price);
       if (tablePct != null) return tablePct;
       const p = Number(price) || 0;
       if (p > 0 && p <= 100) return 14;
       if (p > 100 && p <= 300) return 20;
-      return apiTariff.commissionPct ?? null;
+      return null;
     }
 
     function normalizeProduct(item) {
@@ -1339,7 +1384,7 @@
       }
       if (marginEl) marginEl.textContent = pct(r.margin);
       if (roiEl) roiEl.textContent = pct(r.roi);
-      if (sourceEl) sourceEl.textContent = r.tariff.source === 'базовые тарифы Ozon' ? 'дефолтный тариф' : 'тариф API';
+      if (sourceEl) sourceEl.textContent = r.tariff.source || '—';
     }
 
     function setRowScheme(offerId, scheme) {
@@ -1355,16 +1400,32 @@
       recalcRow(offerId);
     }
 
+    function filteredProducts() {
+      const q = normalizeText(state.assortSearch || $('assortSearch')?.value || '');
+      if (!q) return state.products;
+      return state.products.filter((p) => {
+        const hay = normalizeText((p.name || '') + ' ' + (p.offer_id || ''));
+        return hay.includes(q);
+      });
+    }
+
     function renderAssortment() {
       const tbody = $('assortBody');
       tbody.innerHTML = '';
+      const visible = filteredProducts();
       if (!state.products.length) {
         const tr = document.createElement('tr');
         tr.innerHTML = '<td colspan="11" class="py-8 text-center text-sm text-slate-500">Товары не получены. Проверьте журнал API выше: там будет точный метод, HTTP-статус и ошибка Ozon.</td>';
         tbody.appendChild(tr);
         return;
       }
-      state.products.forEach((p) => {
+      if (state.products.length && !visible.length) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td colspan="11" class="py-8 text-center text-sm text-slate-500">Ничего не найдено по запросу «' + escapeHtml(state.assortSearch || $('assortSearch')?.value || '') + '»</td>';
+        tbody.appendChild(tr);
+        return;
+      }
+      visible.forEach((p) => {
         const oid = p.offer_id;
         const savedCost = localStorage.getItem('sub_cost_' + oid) || '';
         const savedTest = localStorage.getItem('test_price_' + oid) || String(p.price);
@@ -1375,7 +1436,9 @@
           : '<div class="flex h-12 w-12 items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-400">нет фото</div>';
         const tr = document.createElement('tr');
         tr.className = 'border-b align-middle ' + (p.isPromo ? 'border-slate-50' : 'border-amber-100 bg-amber-50/50');
-        const tableMatched = commissionFromTable(p, scheme, savedTest) != null;
+        const testPriceNum = Number(savedTest) || p.price;
+        const tableComm = commissionFromTable(p, scheme, testPriceNum);
+        const tableMatched = tableComm != null;
         const priceBadge = p.isPromo
           ? '<span class="mt-1 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">акция продавца</span>'
           : '<span class="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">без акции</span>';
@@ -1383,6 +1446,11 @@
           (p.isPromo && p.basePrice ? '<div class="text-xs text-slate-400 line-through">' + rub(p.basePrice) + '</div>' : '') +
           '<div class="text-[11px] text-slate-400">' + escapeHtml(p.priceSource || '') + '</div>' +
           priceBadge;
+        const commissionCell =
+          '<td class="py-3 pr-3 text-xs text-slate-600">' +
+          '<div class="font-medium ' + (tableMatched ? 'text-emerald-700' : '') + '">' + pct(tableComm ?? p.tariffs?.[scheme]?.commissionPct) + '</div>' +
+          '<div class="text-slate-400">' + (tableMatched ? 'таблица 2026 · ' + scheme : 'порог / API') + '</div>' +
+          '</div></td>';
         tr.innerHTML =
           '<td class="py-3 pr-3"><div class="flex min-w-[260px] items-center gap-3">' + imageHtml + '<div><div class="font-medium">' + escapeHtml(p.name) + '</div><div class="text-xs text-slate-400">' + escapeHtml(oid) + '</div><div class="text-[11px] text-slate-400">' + escapeHtml([p.categoryName, p.typeName].filter(Boolean).join(' › ')) + '</div><div class="text-[11px] text-slate-400" data-tariff-source="' + oid + '">—</div></div></div></td>' +
           '<td class="py-3 pr-3 text-slate-600">' + (Number.isFinite(p.stock) ? p.stock : '—') + '</td>' +
@@ -1466,7 +1534,20 @@
           return;
         }
         setStatus(true);
-        await loadAllData();
+        btn.disabled = false;
+        btn.textContent = btnLabel;
+        state.dataLoading = true;
+        $('assortHint').textContent = 'Загружаю каталог и таблицу комиссий…';
+        loadAllData()
+          .catch((err) => {
+            showAuthError(err?.message || String(err));
+          })
+          .finally(() => {
+            state.dataLoading = false;
+            btn.disabled = false;
+            btn.textContent = btnLabel;
+          });
+        return;
       } catch (e) {
         setStatus(false);
         showAuthError(e?.message || String(e));
@@ -1558,6 +1639,11 @@
       });
       document.querySelectorAll('.scheme-btn').forEach((b) => b.addEventListener('click', () => setScheme(b.dataset.scheme)));
       $('btnConnect').addEventListener('click', connect);
+      $('btnApiSettings').addEventListener('click', () => setAuthPanelVisible(true));
+      $('assortSearch').addEventListener('input', (e) => {
+        state.assortSearch = e.target.value;
+        renderAssortment();
+      });
     }
 
     async function init() {
