@@ -60,10 +60,10 @@
       </div>
     </section>
 
-    <div id="corsBanner" class="hidden rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm">
-      <p class="font-semibold">Браузер блокирует запросы к Ozon API (CORS)</p>
-      <p class="mt-1">Чтобы подтянуть <strong>реальные товары</strong> из кабинета (а не демо-пледы), установите расширение <strong>CORS Unblock</strong> или <strong>Allow CORS: Access-Control-Allow-Origin</strong>, включите его для этой страницы, обновите вкладку и снова нажмите «Подключить».</p>
-      <p class="mt-2 text-xs text-amber-800">Приложение также пробует публичный прокси <code class="rounded bg-amber-100 px-1">corsproxy.io</code>. Если прокси недоступен — без расширения останутся только офлайн-тарифы и демо-ассортимент.</p>
+    <div id="corsBanner" class="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-950 shadow-sm">
+      <p class="font-semibold">Интеграция Ozon работает через back-to-back прокси Apps Script</p>
+      <p class="mt-1">Браузер не обращается к Seller API напрямую: каждый запрос отправляется на <code class="rounded bg-blue-100 px-1">CORS_PROXY</code>, а Apps Script уже подставляет ключи в серверные заголовки.</p>
+      <p class="mt-2 text-xs text-blue-800">Если данные не грузятся, проверьте URL опубликованного Apps Script в константе <code class="rounded bg-blue-100 px-1">CORS_PROXY</code> и доступ деплоя «Anyone».</p>
     </div>
 
     <nav class="flex flex-wrap gap-2">
@@ -103,8 +103,21 @@
             <input id="price" type="number" min="0" value="2490" class="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2" />
           </label>
 
-          <label class="block text-sm"><div class="flex justify-between"><span>Налог, %</span><span id="taxVal">6</span></div><input id="tax" type="range" min="0" max="30" value="6" class="mt-1 w-full" /></label>
-          <label class="block text-sm"><div class="flex justify-between"><span>Маркетинг, %</span><span id="mktVal">8</span></div><input id="marketing" type="range" min="0" max="40" value="8" class="mt-1 w-full" /></label>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <label class="block text-sm">
+              <span class="text-slate-500">Налоговая система</span>
+              <select id="taxSystem" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2">
+                <option value="income">УСН Доходы</option>
+                <option value="profit">УСН Доходы минус Расходы</option>
+                <option value="vat">ОСНО (НДС)</option>
+              </select>
+            </label>
+            <label class="block text-sm">
+              <span class="text-slate-500">Региональная ставка налога, %</span>
+              <input id="tax" type="number" min="0" max="30" step="0.1" value="6" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2" />
+            </label>
+          </div>
+          <label class="block text-sm"><div class="flex justify-between"><span>ДРР по умолчанию, %</span><span id="mktVal">8</span></div><input id="marketing" type="range" min="0" max="80" value="8" class="mt-1 w-full" /></label>
 
           <details class="rounded-xl border border-slate-100 bg-slate-50/80 p-3">
             <summary class="flex cursor-pointer list-none items-center justify-between text-sm font-medium">
@@ -159,13 +172,14 @@
           <p id="assortHint" class="text-xs text-slate-500">Демо-товары (подключите API для загрузки)</p>
         </div>
         <div class="overflow-x-auto">
-          <table class="w-full min-w-[900px] text-left text-sm">
+          <table class="w-full min-w-[1100px] text-left text-sm">
             <thead class="border-b border-slate-100 text-xs uppercase text-slate-500">
               <tr>
                 <th class="py-2 pr-3">Товар</th>
                 <th class="py-2 pr-3">Себест.</th>
                 <th class="py-2 pr-3">Цена Ozon</th>
                 <th class="py-2 pr-3">Тест-цена</th>
+                <th class="py-2 pr-3">ДРР, %</th>
                 <th class="py-2 pr-3">Схема</th>
                 <th class="py-2 pr-3">Прибыль</th>
                 <th class="py-2 pr-3">Маржа</th>
@@ -184,17 +198,21 @@
   (function () {
     'use strict';
     const API = 'https://api-seller.ozon.ru';
+    const CORS_PROXY = 'https://script.google.com/macros/s/AKfycbxiGu0ql2B8Hua4r6AmhE38CrteI0BbONZehlSaaIBG5M7G9bOkO46ClfRhT9ZaK_e7/exec';
+    const DEV_CLIENT_ID = 'fc6180d5-6e30-47c5-9644-f8b62d65f2ff';
+    const DEV_API_KEY = 'b70a019cdf1abeeadd704eca27383fcc26865d8174945c7c4cf8f51ce82b86e2';
     const LS_CID = 'ozon_ue_client_id';
     const LS_KEY = 'ozon_ue_api_key';
+    const LS_TAX_SYSTEM = 'ozon_ue_tax_system';
+    const LS_TAX_RATE = 'ozon_ue_tax_rate';
     const FBS_FEE = 35;
     const PREMIUM = 2.5;
     const LAST_MILE = 25;
     const $ = (id) => document.getElementById(id);
-    const CORS_PROXY = 'https://corsproxy.io/?';
     const state = {
       connected: false, scheme: 'FBO', categoryTypes: [], selectedType: null,
       tariff: null, tariffSource: 'базовые тарифы Ozon', products: [], rowSchemes: {},
-      viaCorsProxy: false, corsBlocked: false, apiOk: false,
+      apiOk: false,
     };
     let debounce = null;
 
@@ -208,10 +226,13 @@
 
     function rub(n) {
       if (!Number.isFinite(n)) return '—';
-      return (n < 0 ? '−' : '') + Math.abs(n).toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ₽';
+      return (n < 0 ? '−' : '') + Math.abs(n).toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' ₽';
     }
     function pct(n) {
       return Number.isFinite(n) ? n.toLocaleString('ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' %' : '—';
+    }
+    function valueOrFallback(value, fallback) {
+      return value === null || value === undefined || value === '' ? fallback : Number(value);
     }
     function ceilL(l, w, h) {
       return Math.ceil(((Number(l) * Number(w) * Number(h)) / 1000) * 100) / 100;
@@ -243,52 +264,39 @@
       if (i >= 50) return 1.15;
       return 1.25;
     }
-    function headers() {
-      return { 'Client-Id': $('clientId').value.trim(), 'Api-Key': $('apiKey').value.trim(), 'Content-Type': 'application/json' };
+    function apiCredentials() {
+      return {
+        clientId: $('clientId').value.trim() || DEV_CLIENT_ID,
+        apiKey: $('apiKey').value.trim() || DEV_API_KEY,
+      };
     }
-    function isNetworkError(e) {
-      return e instanceof TypeError || /failed to fetch|network|cors/i.test(String(e?.message || e));
-    }
-    function updateCorsBanner() {
-      const b = $('corsBanner');
-      if (!b) return;
-      if (state.corsBlocked) {
-        b.classList.remove('hidden');
-        return;
-      }
-      if (state.viaCorsProxy && state.connected) {
-        b.classList.remove('hidden');
-        b.innerHTML =
-          '<p class="font-semibold text-blue-900">Запросы идут через CORS-прокси corsproxy.io</p>' +
-          '<p class="mt-1 text-blue-800">Для стабильной работы рекомендуем расширение <strong>CORS Unblock</strong> и прямое подключение к API.</p>';
-        return;
-      }
-      b.classList.add('hidden');
+    function proxyReady() {
+      return /^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(CORS_PROXY) && !CORS_PROXY.includes('PASTE_');
     }
     async function apiPost(path, body) {
-      const opts = { method: 'POST', headers: headers(), body: JSON.stringify(body || {}) };
-      let lastErr = null;
-      for (const useProxy of [false, true]) {
-        const url = useProxy ? CORS_PROXY + encodeURIComponent(API + path) : API + path;
-        try {
-          const res = await fetch(url, opts);
-          const text = await res.text();
-          let data = {};
-          try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
-          if (useProxy) state.viaCorsProxy = true;
-          if (res.ok) state.apiOk = true;
-          state.corsBlocked = false;
-          updateCorsBanner();
-          return { ok: res.ok, status: res.status, data, viaProxy: useProxy };
-        } catch (e) {
-          lastErr = e;
-          if (!useProxy && isNetworkError(e)) continue;
-          break;
-        }
+      if (!proxyReady()) {
+        throw new Error('Укажите URL опубликованного Google Apps Script в CORS_PROXY');
       }
-      state.corsBlocked = true;
-      updateCorsBanner();
-      throw lastErr || new Error('Сеть недоступна');
+      const creds = apiCredentials();
+      const payload = {
+        url: API + path,
+        clientId: creds.clientId,
+        apiKey: creds.apiKey,
+        body: body || {},
+      };
+      const res = await fetch(CORS_PROXY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload),
+      });
+      const text = await res.text();
+      let data = {};
+      try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
+      const status = Number(data.status || data.statusCode || res.status);
+      const ozonError = data.error != null || (data.code && data.message && !data.result && !data.items);
+      const ok = res.ok && status >= 200 && status < 300 && !ozonError;
+      state.apiOk = state.apiOk || ok;
+      return { ok, status, data: data.data ?? data.body ?? data, raw: data };
     }
 
     function defaultTariff(vol, scheme, price) {
@@ -307,6 +315,7 @@
       const purchase = Number(opts.purchase) || 0;
       const extra = Number(opts.extra) || 0;
       const taxP = Number(opts.taxP ?? 6) || 0;
+      const taxSystem = opts.taxSystem || 'income';
       const mktP = Number(opts.mktP ?? 8) || 0;
       const loc = Number(opts.loc ?? 75) || 0;
       const retP = Number(opts.retP ?? 5) || 0;
@@ -323,8 +332,11 @@
       const logTotal = mag + nonLoc + lm;
       const fbs = scheme === 'FBS' ? FBS_FEE : 0;
       const retCost = (retP / 100) * (tariff.reverse ?? mag * 0.5);
-      const taxAmt = price * (taxP / 100);
       const mktAmt = price * (mktP / 100);
+      const baseBeforeTax = price - commAmt - logTotal - fbs - retCost - mktAmt - purchase - extra;
+      let taxAmt = price * (taxP / 100);
+      if (taxSystem === 'profit') taxAmt = Math.max(0, baseBeforeTax) * (taxP / 100);
+      if (taxSystem === 'vat') taxAmt = taxP > 0 ? price * (taxP / (100 + taxP)) : 0;
       const ded = commAmt + logTotal + fbs + retCost + taxAmt + mktAmt;
       const costs = purchase + extra;
       const net = price - ded - costs;
@@ -335,8 +347,14 @@
         { t: 'Логистика (магистраль + ПМ)', v: logTotal },
       ];
       if (fbs) rows.push({ t: 'Обработка FBS', v: fbs });
-      rows.push({ t: 'Возвраты (' + retP + '%)', v: retCost }, { t: 'Налоги и реклама', v: taxAmt + mktAmt }, { t: 'Себестоимость + прочее', v: costs, m: true });
+      rows.push({ t: 'Возвраты (' + retP + '%)', v: retCost }, { t: 'Реклама / ДРР (' + mktP + '%)', v: mktAmt }, { t: 'Налог (' + taxLabel(taxSystem) + ', ' + taxP + '%)', v: taxAmt }, { t: 'Себестоимость + прочее', v: costs, m: true });
       return { net, margin, roi, rows, ded, costs, vol, mult, scheme, comm, footNote: scheme + ' · локализация ×' + mult.toFixed(2) + ' · ' + vol.toFixed(2) + ' л', tariff };
+    }
+
+    function taxLabel(system) {
+      if (system === 'profit') return 'УСН Д−Р';
+      if (system === 'vat') return 'ОСНО НДС';
+      return 'УСН доходы';
     }
 
     function flattenOzonTypes(nodes, pathParts) {
@@ -522,6 +540,7 @@
         purchase: $('purchase').value,
         extra: $('extra').value,
         taxP: $('tax').value,
+        taxSystem: $('taxSystem').value,
         mktP: $('marketing').value,
         loc: $('locIndex').value,
         retP: $('returns').value,
@@ -563,6 +582,48 @@
       $('authError').classList.remove('hidden');
     }
 
+    function num(...values) {
+      for (const v of values) {
+        const n = Number(v);
+        if (Number.isFinite(n) && n > 0) return n;
+      }
+      return null;
+    }
+    function parsePriceRow(row) {
+      const price = row.price || {};
+      const commissions = row.commissions || row.commission || {};
+      return {
+        price: num(price.price, price.marketing_price, price.min_price, row.price, row.marketing_price, row.min_price),
+        tariffs: {
+          FBO: {
+            commissionPct: num(commissions.sales_percent_fbo, commissions.commission_fbo, row.commission_fbo, row.sales_percent_fbo),
+            logistics: num(commissions.fbo_deliv_to_customer_amount, commissions.fbo_direct_flow_trans_max_amount, row.fbo_deliv_to_customer_amount),
+            reverse: num(commissions.fbo_return_flow_amount, row.fbo_return_flow_amount),
+            lastMile: num(commissions.fbo_deliv_to_customer_amount, row.fbo_deliv_to_customer_amount),
+            source: '/v4/product/info/prices',
+          },
+          FBS: {
+            commissionPct: num(commissions.sales_percent_fbs, commissions.commission_fbs, row.commission_fbs, row.sales_percent_fbs),
+            logistics: num(commissions.fbs_deliv_to_customer_amount, commissions.fbs_direct_flow_trans_max_amount, row.fbs_deliv_to_customer_amount),
+            reverse: num(commissions.fbs_return_flow_amount, row.fbs_return_flow_amount),
+            lastMile: num(commissions.fbs_deliv_to_customer_amount, row.fbs_deliv_to_customer_amount),
+            source: '/v4/product/info/prices',
+          },
+        },
+      };
+    }
+    function getProductTariff(product, scheme, vol, price) {
+      const apiTariff = product?.tariffs?.[scheme] || {};
+      const fallback = defaultTariff(vol, scheme, price);
+      return {
+        commissionPct: apiTariff.commissionPct ?? fallback.commissionPct,
+        logistics: apiTariff.logistics ?? fallback.logistics,
+        reverse: apiTariff.reverse ?? fallback.reverse,
+        lastMile: apiTariff.lastMile ?? fallback.lastMile,
+        source: apiTariff.source || fallback.source,
+      };
+    }
+
     function normalizeProduct(item) {
       const dims = item.dimensions || item;
       const depth = Number(dims.depth ?? item.depth ?? 300);
@@ -572,6 +633,7 @@
       const priceObj = item.price && typeof item.price === 'object' ? item.price : null;
       const price = Number(
         item._priceRub ??
+        item._parsedPrice?.price ??
         priceObj?.price ??
         priceObj?.marketing_price ??
         item.price ??
@@ -586,6 +648,7 @@
         depth, width, height,
         weight: weightG,
         product_id: item.product_id,
+        tariffs: item._parsedPrice?.tariffs || item.tariffs || null,
       };
     }
 
@@ -623,20 +686,26 @@
             infoByPid.set(pid, x);
           });
         }
-        const pr = await apiPost('/v5/product/info/prices', { filter: { product_id: chunk, visibility: 'ALL' }, limit: 100 });
+        let priceSource = '/v4/product/info/prices';
+        let pr = await apiPost(priceSource, { filter: { product_id: chunk, visibility: 'ALL' }, limit: 100 });
+        if (!pr.ok) {
+          priceSource = '/v5/product/info/prices';
+          pr = await apiPost(priceSource, { filter: { product_id: chunk, visibility: 'ALL' }, limit: 100 });
+        }
         if (pr.ok) {
-          (pr.data?.items || []).forEach((row) => {
+          (pr.data?.items || pr.data?.result?.items || []).forEach((row) => {
             const pid = String(row.product_id);
-            const p = row.price || {};
-            const rub = Number(p.price ?? p.marketing_price ?? p.old_price ?? 0);
-            if (rub > 0) priceByPid.set(pid, rub);
+            const parsed = parsePriceRow(row);
+            parsed.tariffs.FBO.source = priceSource;
+            parsed.tariffs.FBS.source = priceSource;
+            priceByPid.set(pid, parsed);
           });
         }
       }
       return listItems.map((it) => {
         const pid = String(it.product_id);
         const info = infoByPid.get(pid) || {};
-        const merged = { ...it, ...info, _priceRub: priceByPid.get(pid) };
+        const merged = { ...it, ...info, _parsedPrice: priceByPid.get(pid) };
         return normalizeProduct(merged);
       });
     }
@@ -651,7 +720,7 @@
             products = await enrichProductsFromApi(listItems);
             fromApi = products.length > 0;
             if (fromApi) {
-              $('assortHint').textContent = 'Загружено из Ozon API: ' + products.length + ' SKU' + (state.viaCorsProxy ? ' (через прокси)' : '');
+              $('assortHint').textContent = 'Загружено из Ozon API: ' + products.length + ' SKU';
             }
           }
         } catch (_) {
@@ -660,17 +729,26 @@
       }
       if (!fromApi) {
         products = DEMO_PRODUCTS.map(normalizeProduct);
-        if (state.connected && state.corsBlocked) {
-          $('assortHint').textContent = 'CORS заблокирован — демо-товары. Включите CORS Unblock и переподключитесь.';
-        } else if (state.connected) {
+        if (state.connected) {
           $('assortHint').textContent = 'API не вернул товары — показаны демо';
         } else {
           $('assortHint').textContent = 'Демо-товары (подключите API)';
         }
-        if (state.connected && (state.corsBlocked || !state.apiOk)) updateCorsBanner();
       }
       state.products = products;
       renderAssortment();
+    }
+
+    async function loadAllData() {
+      const tree = await apiPost('/v1/description-category/tree', { language: 'RU' });
+      if (tree.ok) {
+        state.categoryTypes = flattenOzonTypes(tree.data?.result || tree.data?.categories || [], [])
+          .sort((a, b) => a.label.localeCompare(b.label, 'ru'));
+        initCategoryCombobox();
+      }
+      await fetchTariff();
+      recalc();
+      await loadAssortment();
     }
 
     function getRowScheme(offerId) {
@@ -683,15 +761,17 @@
       const l = p.depth / 10, w = p.width / 10, h = p.height / 10;
       const vol = ceilL(l, w, h);
       const scheme = getRowScheme(offerId);
-      const testPrice = Number(localStorage.getItem('test_price_' + offerId)) || Number(document.querySelector('[data-test-price="' + offerId + '"]')?.value) || p.price;
-      const purchase = Number(localStorage.getItem('sub_cost_' + offerId)) || Number(document.querySelector('[data-cost="' + offerId + '"]')?.value) || 0;
-      const tariff = defaultTariff(vol, scheme, testPrice);
+      const testPrice = valueOrFallback(localStorage.getItem('test_price_' + offerId), Number(document.querySelector('[data-test-price="' + offerId + '"]')?.value) || p.price);
+      const purchase = valueOrFallback(localStorage.getItem('sub_cost_' + offerId), Number(document.querySelector('[data-cost="' + offerId + '"]')?.value) || 0);
+      const adDrr = valueOrFallback(localStorage.getItem('ad_drr_' + offerId), Number(document.querySelector('[data-ad-drr="' + offerId + '"]')?.value) || Number($('marketing')?.value) || 0);
+      const tariff = getProductTariff(p, scheme, vol, testPrice);
       const r = computeEconomics({
         price: testPrice,
         purchase,
         extra: Number($('extra')?.value) || 0,
         taxP: $('tax')?.value || 6,
-        mktP: $('marketing')?.value || 8,
+        taxSystem: $('taxSystem')?.value || 'income',
+        mktP: adDrr,
         loc: $('locIndex')?.value || 75,
         retP: $('returns')?.value || 5,
         premium: $('premium')?.checked,
@@ -702,12 +782,14 @@
       const profitEl = document.querySelector('[data-profit="' + offerId + '"]');
       const marginEl = document.querySelector('[data-margin="' + offerId + '"]');
       const roiEl = document.querySelector('[data-roi="' + offerId + '"]');
+      const sourceEl = document.querySelector('[data-tariff-source="' + offerId + '"]');
       if (profitEl) {
         profitEl.textContent = rub(r.net);
         profitEl.className = 'font-semibold ' + (r.net > 0 ? 'text-emerald-600' : r.net < 0 ? 'text-red-600' : 'text-slate-500');
       }
       if (marginEl) marginEl.textContent = pct(r.margin);
       if (roiEl) roiEl.textContent = pct(r.roi);
+      if (sourceEl) sourceEl.textContent = r.tariff.source === 'базовые тарифы Ozon' ? 'дефолтный тариф' : 'тариф API';
     }
 
     function setRowScheme(offerId, scheme) {
@@ -730,14 +812,16 @@
         const oid = p.offer_id;
         const savedCost = localStorage.getItem('sub_cost_' + oid) || '';
         const savedTest = localStorage.getItem('test_price_' + oid) || String(p.price);
+        const savedDrr = localStorage.getItem('ad_drr_' + oid) ?? $('marketing').value;
         const scheme = getRowScheme(oid);
         const tr = document.createElement('tr');
         tr.className = 'border-b border-slate-50 align-middle';
         tr.innerHTML =
-          '<td class="py-3 pr-3"><div class="font-medium">' + escapeHtml(p.name) + '</div><div class="text-xs text-slate-400">' + escapeHtml(oid) + '</div></td>' +
+          '<td class="py-3 pr-3"><div class="font-medium">' + escapeHtml(p.name) + '</div><div class="text-xs text-slate-400">' + escapeHtml(oid) + '</div><div class="text-[11px] text-slate-400" data-tariff-source="' + oid + '">—</div></td>' +
           '<td class="py-3 pr-3"><input data-cost="' + oid + '" type="number" min="0" value="' + savedCost + '" placeholder="0" class="w-24 rounded border border-slate-200 px-2 py-1" /></td>' +
           '<td class="py-3 pr-3 text-slate-600">' + rub(p.price) + '</td>' +
           '<td class="py-3 pr-3"><input data-test-price="' + oid + '" type="number" min="0" value="' + savedTest + '" class="w-24 rounded border border-slate-200 px-2 py-1" /></td>' +
+          '<td class="py-3 pr-3"><input data-ad-drr="' + oid + '" type="number" min="0" max="100" step="0.1" value="' + savedDrr + '" class="w-20 rounded border border-slate-200 px-2 py-1" /></td>' +
           '<td class="py-3 pr-3"><div class="flex gap-1">' +
           '<button type="button" class="row-scheme-btn rounded border px-2 py-0.5 text-xs ' + (scheme === 'FBO' ? 'border-ozon bg-ozon text-white' : 'border-slate-200 text-slate-600') + '" data-offer="' + oid + '" data-scheme="FBO">FBO</button>' +
           '<button type="button" class="row-scheme-btn rounded border px-2 py-0.5 text-xs ' + (scheme === 'FBS' ? 'border-ozon bg-ozon text-white' : 'border-slate-200 text-slate-600') + '" data-offer="' + oid + '" data-scheme="FBS">FBS</button>' +
@@ -759,6 +843,12 @@
           recalcRow(inp.dataset.testPrice);
         });
       });
+      tbody.querySelectorAll('[data-ad-drr]').forEach((inp) => {
+        inp.addEventListener('input', () => {
+          localStorage.setItem('ad_drr_' + inp.dataset.adDrr, inp.value);
+          recalcRow(inp.dataset.adDrr);
+        });
+      });
       tbody.querySelectorAll('.row-scheme-btn').forEach((b) => {
         b.addEventListener('click', () => setRowScheme(b.dataset.offer, b.dataset.scheme));
       });
@@ -772,33 +862,22 @@
     async function connect() {
       const cid = $('clientId').value.trim();
       const key = $('apiKey').value.trim();
-      if (!cid || !key) { showAuthError('Укажите Client-ID и API-Key'); return; }
-      localStorage.setItem(LS_CID, cid);
-      localStorage.setItem(LS_KEY, key);
+      const creds = apiCredentials();
+      if (!creds.clientId || !creds.apiKey) { showAuthError('Укажите Client-ID и API-Key'); return; }
+      if (cid) localStorage.setItem(LS_CID, cid);
+      if (key) localStorage.setItem(LS_KEY, key);
       $('authError').classList.add('hidden');
       $('btnConnect').disabled = true;
-      state.viaCorsProxy = false;
-      state.corsBlocked = false;
       state.apiOk = false;
       try {
         const { ok, status } = await apiPost('/v1/seller/info', {});
         if (status === 401 || status === 403) { setStatus(false); showAuthError('Неверный Client-ID или API-Key'); return; }
         if (!ok) { setStatus(false); showAuthError('Ошибка API: ' + status); return; }
         setStatus(true);
-        const tree = await apiPost('/v1/description-category/tree', { language: 'RU' });
-        if (tree.ok) {
-          state.categoryTypes = flattenOzonTypes(tree.data?.result || tree.data?.categories || [], [])
-            .sort((a, b) => a.label.localeCompare(b.label, 'ru'));
-          initCategoryCombobox();
-        }
-        await fetchTariff();
-        recalc();
-        await loadAssortment();
+        await loadAllData();
       } catch (e) {
         setStatus(false);
-        const msg = state.corsBlocked ? 'CORS: включите расширение CORS Unblock' : ('Сеть: ' + (e?.message || e));
-        showAuthError(msg);
-        updateCorsBanner();
+        showAuthError(e?.message || String(e));
         await loadAssortment();
       } finally {
         $('btnConnect').disabled = false;
@@ -828,6 +907,17 @@
       });
     }
 
+    function setTaxSystem(system, overwriteRate) {
+      $('taxSystem').value = system;
+      if (overwriteRate) {
+        $('tax').value = system === 'profit' ? '15' : system === 'vat' ? '20' : '6';
+      }
+      localStorage.setItem(LS_TAX_SYSTEM, $('taxSystem').value);
+      localStorage.setItem(LS_TAX_RATE, $('tax').value);
+      recalc();
+      state.products.forEach((p) => recalcRow(p.offer_id));
+    }
+
     function bind() {
       initTabs();
       'len,wid,hei,weight,purchase,extra,price,priceRange,tax,marketing,locIndex,returns,premium'.split(',').forEach((id) => {
@@ -836,14 +926,21 @@
         el.addEventListener('input', () => {
           if (id === 'priceRange') $('price').value = el.value;
           if (id === 'price') $('priceRange').value = Math.min(30000, Math.max(0, el.value));
-          if (id === 'tax') $('taxVal').textContent = el.value;
           if (id === 'marketing') $('mktVal').textContent = el.value;
           if (id === 'locIndex') $('locVal').textContent = el.value;
           if (id === 'returns') $('retVal').textContent = el.value;
           if (['len', 'wid', 'hei', 'weight', 'price'].includes(id)) schedule();
           else {
+            if (id === 'tax') localStorage.setItem(LS_TAX_RATE, el.value);
             recalc();
-            if (['tax', 'marketing', 'locIndex', 'returns', 'extra'].includes(id)) state.products.forEach((p) => recalcRow(p.offer_id));
+            if (['tax', 'marketing', 'locIndex', 'returns', 'extra'].includes(id)) {
+              if (id === 'marketing') {
+                document.querySelectorAll('[data-ad-drr]').forEach((inp) => {
+                  if (!localStorage.getItem('ad_drr_' + inp.dataset.adDrr)) inp.value = el.value;
+                });
+              }
+              state.products.forEach((p) => recalcRow(p.offer_id));
+            }
           }
         });
         el.addEventListener('change', () => {
@@ -851,6 +948,7 @@
           if (id === 'premium') state.products.forEach((p) => recalcRow(p.offer_id));
         });
       });
+      $('taxSystem').addEventListener('change', () => setTaxSystem($('taxSystem').value, true));
       $('catComboBtn').addEventListener('click', (e) => {
         e.stopPropagation();
         if ($('catComboBtn').disabled) return;
@@ -874,6 +972,8 @@
       const key = localStorage.getItem(LS_KEY);
       if (cid) $('clientId').value = cid;
       if (key) $('apiKey').value = key;
+      $('taxSystem').value = localStorage.getItem(LS_TAX_SYSTEM) || 'income';
+      $('tax').value = localStorage.getItem(LS_TAX_RATE) || ($('taxSystem').value === 'profit' ? '15' : $('taxSystem').value === 'vat' ? '20' : '6');
       state.tariff = defaultTariff(ceilL(30, 25, 8), 'FBO', 2490);
       bind();
       setScheme('FBO');
