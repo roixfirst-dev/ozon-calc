@@ -2401,6 +2401,7 @@
     }
     async function fetchOpTypeBreakdown(from, to) {
       const map = new Map();
+      const serviceMap = new Map();
       const chunks = splitRangeChunks(from, to, 31);
       for (const c of chunks) {
         let page = 1;
@@ -2424,11 +2425,22 @@
             prev.amount += Number(op.amount) || 0;
             prev.count += 1;
             map.set(key, prev);
+
+            const services = Array.isArray(op.services) ? op.services : [];
+            for (const service of services) {
+              const serviceName = service.name || service.service_name || service.type || label || 'Услуга Ozon';
+              const servicePrice = Number(service.price ?? service.amount ?? service.total ?? service.cost) || 0;
+              if (Math.abs(servicePrice) < 0.01) continue;
+              serviceMap.set(serviceName, (serviceMap.get(serviceName) || 0) + servicePrice);
+            }
           }
           page += 1;
         }
       }
-      return [...map.values()].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+      return {
+        opTypes: [...map.values()].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount)),
+        services: [...serviceMap.entries()].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])),
+      };
     }
     const CHART_NEON = ['#8b5cf6', '#2dd4bf', '#f472b6', '#2563eb', '#e5e7eb', '#a78bfa', '#22d3ee', '#fb923c'];
     let dashChartsThemed = false;
@@ -2537,13 +2549,7 @@
     }
     function dashServiceRows(current) {
       const direct = current?.services || [];
-      if (direct.length) return direct;
-
-      const serviceOps = (current?.opTypes || [])
-        .filter((o) => /(услуг|достав|логист|хран|реклам|возврат|сборк|pickup|drop)/i.test(o.label || ''))
-        .filter((o) => Number(o.amount) !== 0)
-        .map((o) => [o.label, o.amount]);
-      if (serviceOps.length) return serviceOps;
+      if (direct.length) return direct.filter((row) => Math.abs(Number(row[1]) || 0) >= 0.01);
 
       const totals = current?.totals || {};
       return [
@@ -2552,7 +2558,7 @@
         ['Услуги Ozon', totals.services_amount],
         ['Возвраты и отмены', totals.refunds_and_cancellations],
         ['Прочее', totals.others_amount],
-      ].filter((row) => Number(row[1]) !== 0);
+      ].filter((row) => Math.abs(Number(row[1]) || 0) >= 0.01);
     }
     function shortDayLabel(dayStr) {
       const d = String(dayStr || '');
@@ -2805,16 +2811,18 @@
       html += '</tbody></table>';
       el.innerHTML = html;
     }
-    function renderDashServices(services, directDetailsLoaded) {
+    function renderDashServices(services, serviceSource) {
       const el = $('dashServices');
       if (!el) return;
       if (!services?.length) {
         el.innerHTML = '<p class="text-slate-400">Детализация услуг недоступна или пуста</p>';
         return;
       }
-      const note = directDetailsLoaded
+      const note = serviceSource === 'cashflow'
         ? ''
-        : '<p class="mb-2 text-xs text-amber-600">Ozon не отдал подробный отчёт услуг за период — показываю fallback из операций/итогов.</p>';
+        : serviceSource === 'transactions'
+          ? '<p class="mb-2 text-xs text-amber-600">Ozon не отдал подробный отчёт услуг за период — показываю услуги из транзакций.</p>'
+          : '<p class="mb-2 text-xs text-amber-600">Ozon не отдал детализацию услуг — показываю ненулевые итоговые расходы.</p>';
       el.innerHTML = note + services.slice(0, 40).map(([name, price]) =>
         '<div class="flex justify-between gap-2 border-b border-slate-50 py-1"><span class="text-slate-600">' + name + '</span><span class="font-medium ' + (price < 0 ? 'text-red-600' : '') + '">' + rub(price) + '</span></div>'
       ).join('');
@@ -2837,7 +2845,7 @@
       renderDashFinance(payload.current.totals);
       renderDashTaxEst(payload.current.totals);
       renderDashAnalytics(payload.current.analytics.rows);
-      renderDashServices(dashServiceRows(payload.current), !!payload.current.services?.length);
+      renderDashServices(dashServiceRows(payload.current), payload.current.serviceSource);
       renderDashOpTypes(payload.current.opTypes);
       renderDashCharts(payload);
       updateDashTaxInfo();
@@ -2865,14 +2873,16 @@
       dashSetStatus('Загрузка: финансы, аналитика, отчёт…', false);
       try {
         const prev = dashPrevPeriod(from, to);
-        const [totals, prevTotals, analytics, prevAnalytics, cashFlow, opTypes] = await Promise.all([
+        const [totals, prevTotals, analytics, prevAnalytics, cashFlow, opBreakdown] = await Promise.all([
           fetchFinanceTotalsRange(from, to),
           fetchFinanceTotalsRange(prev.from, prev.to),
           fetchAnalyticsRange(from, to),
           fetchAnalyticsRange(prev.from, prev.to),
           fetchCashFlowRange(from, to),
-          dashPeriodDays(from, to) <= 31 ? fetchOpTypeBreakdown(from, to) : Promise.resolve([]),
+          dashPeriodDays(from, to) <= 31 ? fetchOpTypeBreakdown(from, to) : Promise.resolve({ opTypes: [], services: [] }),
         ]);
+        const financeServices = cashFlow.services?.length ? cashFlow.services : (opBreakdown.services || []);
+        const serviceSource = cashFlow.services?.length ? 'cashflow' : (opBreakdown.services?.length ? 'transactions' : 'totals');
         const payload = {
           from,
           to,
@@ -2880,8 +2890,9 @@
           current: {
             totals,
             analytics,
-            services: cashFlow.services,
-            opTypes,
+            services: financeServices,
+            serviceSource,
+            opTypes: opBreakdown.opTypes || opBreakdown || [],
           },
         };
         renderDashboard(payload);
