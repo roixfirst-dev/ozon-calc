@@ -357,7 +357,7 @@
           <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Поставки · FBO</h2>
-              <p class="mt-1 text-xs text-slate-500">Продажи по ~30 кластерам (быстрая загрузка) · остатки FBO · наценки</p>
+              <p class="mt-1 text-xs text-slate-500">Продажи по кластерам · остатки FBO · наценки · кэш 30 мин</p>
             </div>
             <button id="btnSupplyLoad" type="button" class="rounded-xl bg-ozon px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-ozon-dark disabled:opacity-50">Обновить поставки</button>
           </div>
@@ -421,6 +421,8 @@
     const LS_COMMISSION_TABLE = 'ozon_ue_commission_table_2026';
     const LS_DASH_FROM = 'ozon_ue_dash_from';
     const LS_DASH_TO = 'ozon_ue_dash_to';
+    const LS_SUPPLY_CACHE = 'ozon_ue_supply_cache_v2';
+    const SUPPLY_CACHE_TTL_MS = 30 * 60 * 1000;
     const COMMISSION_SHEET_ID = '1Kh31uRcKJJ5SU-TZHBtsBlZ4W4SH9QzT1eJA78dcBtY';
     const LOGISTICS_SHEET_ID = '1FNqyAsIcI3wCrVvqnQmo1gEWdOzsp00Z64eKhpNgy7Y';
     const SURCHARGE_SHEET_ID = '1FW26Z82I6_H8M2h4pOyb3OP3Jd0TaL_CsAQ4FOthshA';
@@ -3296,7 +3298,6 @@
         const result = await proxyCall({
           action: 'getCommissionSheet',
           spreadsheetId: SURCHARGE_SHEET_ID,
-          skipCache: true,
         });
         if (!result.ok) throw new Error(result.error || 'HTTP ' + result.status);
         const rows = result.data?.rows;
@@ -3440,7 +3441,73 @@
       keys.forEach((alias) => sales.set(alias, cloneClusterSalesMap(cloned)));
     }
 
-    const SUPPLY_API_CONCURRENCY = 8;
+    const SUPPLY_GAS_BATCH = 18;
+    const SUPPLY_GAS_PARALLEL = 2;
+
+    function supplyCacheKey(productIds) {
+      const creds = apiCredentials();
+      const sorted = [...productIds].map(String).filter(Boolean).sort();
+      return (creds.clientId || 'no-cid') + '|' + sorted.length + '|' + sorted.join(',');
+    }
+
+    function readSupplyCache(productIds) {
+      try {
+        const raw = localStorage.getItem(LS_SUPPLY_CACHE);
+        if (!raw) return null;
+        const box = JSON.parse(raw);
+        if (!box || !box.ts || !box.items) return null;
+        if (Date.now() - box.ts > SUPPLY_CACHE_TTL_MS) return null;
+        if (box.key !== supplyCacheKey(productIds)) return null;
+        return box;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function writeSupplyCache(productIds, payload) {
+      try {
+        localStorage.setItem(
+          LS_SUPPLY_CACHE,
+          JSON.stringify({
+            ts: Date.now(),
+            key: supplyCacheKey(productIds),
+            ...payload,
+          })
+        );
+      } catch (e) {
+        console.warn('Supply cache write failed', e);
+      }
+    }
+
+    function applySupplyCache(box) {
+      state.supply.items = box.items || [];
+      state.supply.loaded = true;
+      state.supply.clusterSalesOk = !!box.clusterSalesOk;
+      state.supply.analyticsNote = box.analyticsNote || '';
+      state.supply.fboOrders7d = box.fboOrders7d || 0;
+      state.supply.surchargeExempt = !!box.surchargeExempt;
+      state.supply.error = '';
+    }
+
+    function supplyCacheAgeMinutes(ts) {
+      return Math.max(0, Math.round((Date.now() - ts) / 60000));
+    }
+
+    async function proxySupplyClusterBatch(clusterIds) {
+      const creds = apiCredentials();
+      const result = await proxyCall({
+        action: 'fetchSupplyClusterSales',
+        clientId: creds.clientId,
+        apiKey: creds.apiKey,
+        clusterIds: clusterIds.map(String),
+        delivery_schema: 'FBO',
+        supply_period: 'FOUR_WEEKS',
+      });
+      if (!result.ok) {
+        throw new Error(result.error || 'Пакетная загрузка кластеров: HTTP ' + result.status);
+      }
+      return result.data || {};
+    }
 
     function buildCatalogKeySet(ozonSkuList, skuAliases) {
       const keys = new Set(ozonSkuList.map(String).filter(Boolean));
@@ -3505,58 +3572,84 @@
       return true;
     }
 
-    async function fetchOneClusterDetails(clusterId, idToName, catalogKeys, skuAliases, sales) {
+    function ingestClusterDetailRows(sales, clusterId, rows, idToName, catalogKeys, skuAliases) {
       const destName = idToName.get(String(clusterId)) || String(clusterId);
       const destKey = resolveClusterName(destName, state.supply.surchargeTable);
-      if (!destKey) return { rows: 0, matched: 0 };
-
+      if (!destKey || !rows?.length) return 0;
       let matched = 0;
-      let offset = 0;
-      for (let page = 0; page < 15; page++) {
-        const res = await apiPost('/v1/analytics/average-delivery-time/details', {
-          cluster_id: Number(clusterId),
-          limit: 1000,
-          offset,
-          filters: {
-            delivery_schema: 'FBO',
-            supply_period: 'FOUR_WEEKS',
-          },
-        });
-        if (!res.ok) return { rows: 0, matched, error: state.lastApiError };
-        const rows = res.data?.data || res.data?.result?.data || [];
-        if (!rows.length) break;
-        rows.forEach((row) => {
-          if (mergeDetailRowIntoSales(sales, row, destKey, catalogKeys, skuAliases)) matched++;
-        });
-        if (rows.length < 1000) break;
-        offset += 1000;
-      }
-      return { rows: offset, matched };
+      rows.forEach((row) => {
+        if (mergeDetailRowIntoSales(sales, row, destKey, catalogKeys, skuAliases)) matched++;
+      });
+      return matched;
     }
 
     /**
-     * Быстрая загрузка: ~30 запросов по кластерам (параллельно), а не 200+ по SKU.
-     * average-delivery-time/details — все товары внутри кластера доставки за 4 нед.
+     * 2–4 запроса к прокси (пакеты по 18 кластеров на сервере), а не 30+ отдельных.
      */
     async function fetchClusterSalesFromDeliveryTime(ozonSkuList, idToName, skuAliases, onProgress) {
       const sales = new Map();
       const catalogKeys = buildCatalogKeySet(ozonSkuList, skuAliases);
       const clusterIds = clusterIdsForAnalytics(idToName, state.supply.surchargeTable);
-      let done = 0;
       let matchedRows = 0;
       let lastErr = '';
+      let usedBatch = false;
 
-      for (let i = 0; i < clusterIds.length; i += SUPPLY_API_CONCURRENCY) {
-        const batch = clusterIds.slice(i, i + SUPPLY_API_CONCURRENCY);
-        const results = await Promise.all(
-          batch.map((cid) => fetchOneClusterDetails(cid, idToName, catalogKeys, skuAliases, sales))
-        );
-        results.forEach((r) => {
-          if (r.error) lastErr = r.error;
-          matchedRows += r.matched || 0;
-        });
-        done += batch.length;
-        if (onProgress) onProgress(done, clusterIds.length);
+      const gasChunks = [];
+      for (let i = 0; i < clusterIds.length; i += SUPPLY_GAS_BATCH) {
+        gasChunks.push(clusterIds.slice(i, i + SUPPLY_GAS_BATCH));
+      }
+
+      let clustersDone = 0;
+      for (let i = 0; i < gasChunks.length; i += SUPPLY_GAS_PARALLEL) {
+        const parallel = gasChunks.slice(i, i + SUPPLY_GAS_PARALLEL);
+        let packs;
+        try {
+          packs = await Promise.all(parallel.map((ids) => proxySupplyClusterBatch(ids)));
+          usedBatch = true;
+        } catch (batchErr) {
+          console.warn('Supply GAS batch failed, fallback to per-cluster', batchErr);
+          packs = null;
+        }
+
+        if (packs) {
+          packs.forEach((pack, pi) => {
+            const ids = parallel[pi];
+            const clusters = pack.clusters || {};
+            Object.keys(pack.errors || {}).forEach((cid) => {
+              const e = pack.errors[cid];
+              if (e?.message) lastErr = e.message;
+            });
+            ids.forEach((cid) => {
+              const rows = clusters[cid] || clusters[String(cid)] || [];
+              matchedRows += ingestClusterDetailRows(sales, cid, rows, idToName, catalogKeys, skuAliases);
+            });
+          });
+        } else {
+          for (const ids of parallel) {
+            for (const cid of ids) {
+              let offset = 0;
+              for (let page = 0; page < 12; page++) {
+                const res = await apiPost('/v1/analytics/average-delivery-time/details', {
+                  cluster_id: Number(cid),
+                  limit: 1000,
+                  offset,
+                  filters: { delivery_schema: 'FBO', supply_period: 'FOUR_WEEKS' },
+                });
+                if (!res.ok) {
+                  lastErr = state.lastApiError || 'Ozon details error';
+                  break;
+                }
+                const rows = res.data?.data || res.data?.result?.data || [];
+                matchedRows += ingestClusterDetailRows(sales, cid, rows, idToName, catalogKeys, skuAliases);
+                if (rows.length < 1000) break;
+                offset += 1000;
+              }
+            }
+          }
+        }
+
+        clustersDone += parallel.reduce((n, ids) => n + ids.length, 0);
+        if (onProgress) onProgress(clustersDone, clusterIds.length);
       }
 
       const skusWithSales = new Set();
@@ -3566,9 +3659,11 @@
 
       state.supply.clusterSalesOk = skusWithSales.size > 0;
       state.supply.analyticsNote = state.supply.clusterSalesOk
-        ? 'Продажи по кластерам: Ozon details · ' +
+        ? 'Продажи: ' +
+          (usedBatch ? 'пакет GAS' : 'по кластерам') +
+          ' · ' +
           clusterIds.length +
-          ' кластеров · SKU с продажами ' +
+          ' класт. · SKU ' +
           skusWithSales.size +
           '/' +
           ozonSkuList.length
@@ -4115,16 +4210,30 @@
         $('supplySummary')?.classList.add('hidden');
         return;
       }
+      if (isDemoCatalog() || !state.products.some((p) => p.product_id)) {
+        $('supplyHint').textContent = 'Загружаю ассортимент из Ozon API…';
+        await loadAssortment();
+      }
+      const products = state.products.filter((p) => p.product_id);
+      const productIds = products.map((p) => p.product_id).filter(Boolean);
+      if (!force && productIds.length) {
+        const cached = readSupplyCache(productIds);
+        if (cached?.items?.length) {
+          applySupplyCache(cached);
+          renderSupplySummary(state.supply.items);
+          renderSupplyList();
+          const age = supplyCacheAgeMinutes(cached.ts);
+          $('supplyHint').textContent =
+            'Из кэша (' + age + ' мин назад). «Обновить поставки» — свежие данные с Ozon.';
+          setSupplyStatus('', false);
+          return;
+        }
+      }
       state.supply.loading = true;
       const btn = $('btnSupplyLoad');
       if (btn) btn.disabled = true;
       setSupplyStatus('Загружаю остатки и таблицу наценок…', false);
       try {
-        if (isDemoCatalog() || !state.products.some((p) => p.product_id)) {
-          $('supplyHint').textContent = 'Загружаю ассортимент из Ozon API…';
-          await loadAssortment();
-        }
-        const products = state.products.filter((p) => p.product_id);
         if (!products.length) {
           throw new Error(
             isDemoCatalog()
@@ -4132,7 +4241,6 @@
               : 'API не вернул товары с product_id — проверьте ключи и права Seller API'
           );
         }
-        const productIds = products.map((p) => p.product_id).filter(Boolean);
         const [, clusterInfo, stocksPack, fbo7] = await Promise.all([
           loadSupplySurchargeTable(),
           fetchOzonClusterMap(),
@@ -4155,7 +4263,11 @@
           throw new Error('Не найден Ozon SKU у товаров — обновите ассортимент и повторите');
         }
         const clusterCount = clusterIdsForAnalytics(idToName, table).length;
-        setSupplyStatus('Загружаю продажи по ' + clusterCount + ' кластерам (параллельно)…', false);
+        const gasCalls = Math.ceil(clusterCount / SUPPLY_GAS_BATCH);
+        setSupplyStatus(
+          'Продажи: ' + clusterCount + ' кластеров · ' + gasCalls + ' пакетных запросов к прокси…',
+          false
+        );
         const salesMap = await fetchClusterSalesFromDeliveryTime(
           ozonSkus,
           idToName,
@@ -4178,8 +4290,16 @@
         state.supply.items = items;
         state.supply.loaded = true;
         state.supply.error = '';
+        writeSupplyCache(productIds, {
+          items,
+          clusterSalesOk: state.supply.clusterSalesOk,
+          analyticsNote: state.supply.analyticsNote,
+          fboOrders7d: state.supply.fboOrders7d,
+          surchargeExempt: state.supply.surchargeExempt,
+        });
         renderSupplySummary(items);
         renderSupplyList();
+        $('supplyHint').textContent = 'Данные обновлены. Повторное открытие вкладки — из кэша до 30 мин.';
         setSupplyStatus('', false);
       } catch (e) {
         state.supply.error = e?.message || String(e);
