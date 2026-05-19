@@ -8,6 +8,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script>
     tailwind.config = { theme: { extend: { colors: { ozon: '#005bff', 'ozon-dark': '#0047cc' } } } };
   </script>
@@ -39,6 +40,8 @@
     .dash-chart-empty { color: #64748b; font-size: 0.8125rem; text-align: center; padding: 2.5rem 1rem; }
     .cat-option:hover, .cat-option.focus { background: #e8f1ff; }
     .cat-option[aria-selected="true"] { background: #005bff; color: #fff; }
+    body.paywall-locked main,
+    body.paywall-locked header { filter: blur(4px); pointer-events: none; user-select: none; }
   </style>
 </head>
 <body class="min-h-screen bg-gradient-to-br from-slate-100 via-white to-blue-50 text-slate-800 antialiased">
@@ -318,6 +321,32 @@
 
   </main>
 
+  <div id="paywallModal" class="fixed inset-0 z-[200] hidden items-center justify-center bg-slate-900/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="paywallTitle">
+    <div class="w-full max-w-lg rounded-3xl border border-white/10 bg-white p-6 shadow-2xl sm:p-8">
+      <div class="mb-5 text-center">
+        <div class="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-2xl">🔒</div>
+        <h2 id="paywallTitle" class="text-xl font-bold text-slate-900">Доступ ограничен 🔒</h2>
+        <p class="mt-2 text-sm text-slate-600">Ваш бесплатный период (7 дней) или оплаченная подписка завершились.</p>
+      </div>
+      <div class="mb-6 grid gap-3 sm:grid-cols-2">
+        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center">
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Тариф</p>
+          <p class="mt-1 text-lg font-bold text-slate-900">1 неделя</p>
+          <p class="mt-1 text-2xl font-bold text-ozon">700 ₽</p>
+        </div>
+        <div class="rounded-2xl border-2 border-ozon/30 bg-blue-50/60 p-4 text-center">
+          <p class="text-xs font-semibold uppercase tracking-wide text-ozon">Выгоднее</p>
+          <p class="mt-1 text-lg font-bold text-slate-900">1 месяц</p>
+          <p class="mt-1 text-2xl font-bold text-ozon">1 799 ₽</p>
+        </div>
+      </div>
+      <button id="btnPaywallRenew" type="button" class="w-full rounded-xl bg-ozon px-5 py-3.5 text-sm font-semibold text-white shadow-lg hover:bg-ozon-dark">
+        Продлить доступ в боте
+      </button>
+      <p id="paywallExpires" class="mt-3 text-center text-xs text-slate-400"></p>
+    </div>
+  </div>
+
   <script>
   (function () {
     'use strict';
@@ -352,7 +381,10 @@
       categoryTypeById: new Map(),
       assortSearch: '', dataLoading: false,
       dashboard: { loading: false, loaded: false, data: null, charts: {} },
+      subscriptionBlocked: false,
     };
+    const tg = window.Telegram?.WebApp;
+    let tgId = '';
     let debounce = null;
 
     const DEMO_PRODUCTS = [
@@ -461,22 +493,71 @@
       }
     }
 
+    function initTelegramWebApp() {
+      if (!tg) return;
+      try {
+        tg.ready();
+        tg.expand();
+        if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes();
+      } catch (_) { /* ignore */ }
+      tgId = String(tg.initDataUnsafe?.user?.id || '');
+    }
+    function getTgId() {
+      return tgId || String(tg?.initDataUnsafe?.user?.id || '');
+    }
+    function showSubscriptionPaywall(info) {
+      state.subscriptionBlocked = true;
+      document.body.classList.add('paywall-locked');
+      const modal = $('paywallModal');
+      if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+      }
+      const exp = $('paywallExpires');
+      if (exp) {
+        const until = info?.expiresAt || info?.data?.expiresAt;
+        exp.textContent = until ? 'Доступ истёк: ' + until : '';
+      }
+    }
+    function hideSubscriptionPaywall() {
+      state.subscriptionBlocked = false;
+      document.body.classList.remove('paywall-locked');
+      const modal = $('paywallModal');
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      }
+    }
     async function proxyCall(payload) {
       if (!proxyReady()) {
         throw new Error('Укажите URL опубликованного Google Apps Script в CORS_PROXY');
+      }
+      if (state.subscriptionBlocked) {
+        return { ok: false, status: 402, data: null, raw: {}, error: 'Subscription expired' };
       }
       const res = await fetch(CORS_PROXY, {
         method: 'POST',
         mode: 'cors',
         redirect: 'follow',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, tgId: getTgId() }),
       });
       const text = await res.text();
       const data = parseProxyText(text);
       const status = Number(data.status || data.statusCode || res.status);
       const normalizedData = data.data ?? data.body ?? (data.error ? null : data);
       const errMsg = data.error || normalizedData?.error;
+      if (status === 402 || normalizedData?.subscriptionExpired) {
+        showSubscriptionPaywall(normalizedData || data);
+        return {
+          ok: false,
+          status: 402,
+          data: normalizedData,
+          raw: data,
+          error: errMsg || 'Subscription expired',
+          subscriptionExpired: true,
+        };
+      }
       const ok = res.ok && status >= 200 && status < 300 && !errMsg;
       return { ok, status, data: normalizedData, raw: data, error: errMsg };
     }
@@ -2978,8 +3059,19 @@
       state.products.forEach((p) => recalcRow(p.offer_id));
     }
 
+    async function verifySubscriptionOnStart() {
+      if (!getTgId() || !proxyReady()) return;
+      await proxyCall({ action: 'checkSubscription' });
+    }
+
     function bind() {
       initTabs();
+      $('btnPaywallRenew')?.addEventListener('click', () => {
+        try {
+          if (tg?.close) tg.close();
+          else if (window.history.length > 1) window.history.back();
+        } catch (_) { /* ignore */ }
+      });
       'len,wid,hei,weight,purchase,extra,price,priceRange,tax,vatRate,marketing,locIndex,returns,premium'.split(',').forEach((id) => {
         const el = $(id);
         if (!el) return;
@@ -3071,7 +3163,10 @@
         $('vatRate').value = localStorage.getItem(LS_VAT_RATE) ?? '0';
         if (localStorage.getItem(LS_FBO_SAME_CLUSTER) === '1') $('fboSameCluster').checked = true;
         state.tariff = defaultTariff(ceilL(30, 25, 8), 'FBO', 2490);
+        initTelegramWebApp();
         bind();
+        await verifySubscriptionOnStart();
+        if (state.subscriptionBlocked) return;
         updateSchemeUi();
         setScheme('FBO');
         recalc();
