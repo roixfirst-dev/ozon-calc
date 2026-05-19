@@ -357,7 +357,7 @@
           <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Поставки · FBO</h2>
-              <p class="mt-1 text-xs text-slate-500">Продажи по кластерам — Ozon API · остатки FBO по кластерам · таблица наценок</p>
+              <p class="mt-1 text-xs text-slate-500">Продажи по ~30 кластерам (быстрая загрузка) · остатки FBO · наценки</p>
             </div>
             <button id="btnSupplyLoad" type="button" class="rounded-xl bg-ozon px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-ozon-dark disabled:opacity-50">Обновить поставки</button>
           </div>
@@ -3440,68 +3440,139 @@
       keys.forEach((alias) => sales.set(alias, cloneClusterSalesMap(cloned)));
     }
 
-    /** Продажи по кластерам — Ozon «Среднее время доставки» (не /v1/analytics/data: там нет cluster). */
+    const SUPPLY_API_CONCURRENCY = 8;
+
+    function buildCatalogKeySet(ozonSkuList, skuAliases) {
+      const keys = new Set(ozonSkuList.map(String).filter(Boolean));
+      skuAliases.forEach((group) => group.forEach((k) => keys.add(String(k))));
+      return keys;
+    }
+
+    function catalogHasSku(catalogKeys, sku, offerId) {
+      if (sku && catalogKeys.has(String(sku))) return true;
+      if (offerId && catalogKeys.has(String(offerId))) return true;
+      return false;
+    }
+
+    function clusterIdsForAnalytics(idToName, table) {
+      const ids = [];
+      const nameToId = new Map();
+      idToName.forEach((name, id) => {
+        const key = resolveClusterName(name, table);
+        if (key) nameToId.set(key, id);
+      });
+      if (table?.byDelivery?.size) {
+        table.byDelivery.forEach((_, key) => {
+          const id = nameToId.get(key);
+          if (id) ids.push(String(id));
+        });
+      }
+      if (!ids.length) {
+        idToName.forEach((_, id) => ids.push(String(id)));
+      }
+      return [...new Set(ids)];
+    }
+
+    function mergeDetailRowIntoSales(sales, row, destKey, catalogKeys, skuAliases) {
+      const sku = String(row.item?.sku || '');
+      const offer = String(row.item?.offer_id || '');
+      if (!catalogHasSku(catalogKeys, sku, offer)) return false;
+      const units = Number(row.metrics?.orders_count?.total) || 0;
+      if (units <= 0) return false;
+
+      const byOrigin = new Map();
+      (row.clusters_data || []).forEach((orig) => {
+        const oid = String(orig.cluster_id ?? '');
+        const oName = state.supply.clusterIdToName?.get(oid) || oid;
+        const oKey = resolveClusterName(oName, state.supply.surchargeTable);
+        const oc = Number(orig.orders_count) || 0;
+        if (!oKey || oc <= 0) return;
+        byOrigin.set(oKey, (byOrigin.get(oKey) || 0) + oc);
+      });
+
+      const aliasList = skuAliases.get(sku) || skuAliases.get(offer) || [sku || offer];
+      aliasList.forEach((alias) => {
+        if (!alias) return;
+        if (!sales.has(alias)) sales.set(alias, new Map());
+        const m = sales.get(alias);
+        const prev = m.get(destKey) || { units: 0, revenue: 0, byOrigin: new Map() };
+        prev.units += units;
+        byOrigin.forEach((cnt, oKey) => {
+          prev.byOrigin.set(oKey, (prev.byOrigin.get(oKey) || 0) + cnt);
+        });
+        m.set(destKey, prev);
+      });
+      return true;
+    }
+
+    async function fetchOneClusterDetails(clusterId, idToName, catalogKeys, skuAliases, sales) {
+      const destName = idToName.get(String(clusterId)) || String(clusterId);
+      const destKey = resolveClusterName(destName, state.supply.surchargeTable);
+      if (!destKey) return { rows: 0, matched: 0 };
+
+      let matched = 0;
+      let offset = 0;
+      for (let page = 0; page < 15; page++) {
+        const res = await apiPost('/v1/analytics/average-delivery-time/details', {
+          cluster_id: Number(clusterId),
+          limit: 1000,
+          offset,
+          filters: {
+            delivery_schema: 'FBO',
+            supply_period: 'FOUR_WEEKS',
+          },
+        });
+        if (!res.ok) return { rows: 0, matched, error: state.lastApiError };
+        const rows = res.data?.data || res.data?.result?.data || [];
+        if (!rows.length) break;
+        rows.forEach((row) => {
+          if (mergeDetailRowIntoSales(sales, row, destKey, catalogKeys, skuAliases)) matched++;
+        });
+        if (rows.length < 1000) break;
+        offset += 1000;
+      }
+      return { rows: offset, matched };
+    }
+
+    /**
+     * Быстрая загрузка: ~30 запросов по кластерам (параллельно), а не 200+ по SKU.
+     * average-delivery-time/details — все товары внутри кластера доставки за 4 нед.
+     */
     async function fetchClusterSalesFromDeliveryTime(ozonSkuList, idToName, skuAliases, onProgress) {
       const sales = new Map();
-      const skus = [...new Set(ozonSkuList.map(String).filter(Boolean))];
-      let okSkus = 0;
+      const catalogKeys = buildCatalogKeySet(ozonSkuList, skuAliases);
+      const clusterIds = clusterIdsForAnalytics(idToName, state.supply.surchargeTable);
+      let done = 0;
+      let matchedRows = 0;
       let lastErr = '';
 
-      for (let i = 0; i < skus.length; i++) {
-        const sku = skus[i];
-        if (onProgress) onProgress(i + 1, skus.length);
-        const res = await apiPost('/v1/analytics/average-delivery-time', {
-          delivery_schema: 'FBO',
-          supply_period: 'FOUR_WEEKS',
-          sku: [sku],
+      for (let i = 0; i < clusterIds.length; i += SUPPLY_API_CONCURRENCY) {
+        const batch = clusterIds.slice(i, i + SUPPLY_API_CONCURRENCY);
+        const results = await Promise.all(
+          batch.map((cid) => fetchOneClusterDetails(cid, idToName, catalogKeys, skuAliases, sales))
+        );
+        results.forEach((r) => {
+          if (r.error) lastErr = r.error;
+          matchedRows += r.matched || 0;
         });
-        if (!res.ok) {
-          lastErr = state.lastApiError;
-          continue;
-        }
-        const rows = res.data?.data || res.data?.result?.data || [];
-        if (!rows.length) continue;
-
-        const skuMap = new Map();
-        rows.forEach((row) => {
-          const destId = String(row.delivery_cluster_id ?? '');
-          const destName = idToName.get(destId) || destId;
-          const destKey = resolveClusterName(destName, state.supply.surchargeTable);
-          if (!destKey) return;
-
-          const byOrigin = new Map();
-          let sumOrigins = 0;
-          (row.clusters_data || []).forEach((orig) => {
-            const oid = String(orig.cluster_id ?? '');
-            const oName = idToName.get(oid) || oid;
-            const oKey = resolveClusterName(oName, state.supply.surchargeTable);
-            const oc = Number(orig.orders_count) || 0;
-            if (!oKey || oc <= 0) return;
-            byOrigin.set(oKey, (byOrigin.get(oKey) || 0) + oc);
-            sumOrigins += oc;
-          });
-          const units = Number(row.metrics?.orders_count?.total) || sumOrigins;
-          if (units <= 0) return;
-
-          const prev = skuMap.get(destKey) || { units: 0, revenue: 0, byOrigin: new Map() };
-          prev.units += units;
-          byOrigin.forEach((cnt, oKey) => {
-            prev.byOrigin.set(oKey, (prev.byOrigin.get(oKey) || 0) + cnt);
-          });
-          skuMap.set(destKey, prev);
-        });
-
-        if (skuMap.size) {
-          okSkus++;
-          publishSkuSales(sales, sku, skuMap, skuAliases);
-        }
-        if (i > 0 && i % 8 === 0) await new Promise((r) => setTimeout(r, 120));
+        done += batch.length;
+        if (onProgress) onProgress(done, clusterIds.length);
       }
 
-      state.supply.clusterSalesOk = okSkus > 0;
+      const skusWithSales = new Set();
+      sales.forEach((m, alias) => {
+        if (m.size) skusWithSales.add(alias);
+      });
+
+      state.supply.clusterSalesOk = skusWithSales.size > 0;
       state.supply.analyticsNote = state.supply.clusterSalesOk
-        ? 'Продажи по кластерам: Ozon «Среднее время доставки», FBO, 4 нед. · SKU ' + okSkus + '/' + skus.length
-        : lastErr || 'Ozon не вернул продажи по кластерам (average-delivery-time)';
+        ? 'Продажи по кластерам: Ozon details · ' +
+          clusterIds.length +
+          ' кластеров · SKU с продажами ' +
+          skusWithSales.size +
+          '/' +
+          ozonSkuList.length
+        : lastErr || 'Ozon не вернул продажи по кластерам (average-delivery-time/details)';
       return sales;
     }
 
@@ -4047,13 +4118,8 @@
       state.supply.loading = true;
       const btn = $('btnSupplyLoad');
       if (btn) btn.disabled = true;
-      setSupplyStatus('Загружаю продажи, остатки и таблицу наценок…', false);
+      setSupplyStatus('Загружаю остатки и таблицу наценок…', false);
       try {
-        await loadSupplySurchargeTable();
-        const table = state.supply.surchargeTable;
-        const { idToName } = await fetchOzonClusterMap();
-        state.supply.fboOrders7d = await fetchFboOrders7d();
-        state.supply.surchargeExempt = state.supply.fboOrders7d > 0 && state.supply.fboOrders7d < 50;
         if (isDemoCatalog() || !state.products.some((p) => p.product_id)) {
           $('supplyHint').textContent = 'Загружаю ассортимент из Ozon API…';
           await loadAssortment();
@@ -4067,7 +4133,17 @@
           );
         }
         const productIds = products.map((p) => p.product_id).filter(Boolean);
-        const { stocksByPid, stocksByOffer, skuByPid } = await fetchSupplyStocksV3(productIds);
+        const [, clusterInfo, stocksPack, fbo7] = await Promise.all([
+          loadSupplySurchargeTable(),
+          fetchOzonClusterMap(),
+          fetchSupplyStocksV3(productIds),
+          fetchFboOrders7d(),
+        ]);
+        const table = state.supply.surchargeTable;
+        const { idToName } = clusterInfo;
+        const { stocksByPid, stocksByOffer, skuByPid } = stocksPack;
+        state.supply.fboOrders7d = fbo7;
+        state.supply.surchargeExempt = state.supply.fboOrders7d > 0 && state.supply.fboOrders7d < 50;
         const skuAliases = buildSkuAliasMap(products, skuByPid);
         const ozonSkus = [];
         products.forEach((p) => {
@@ -4078,12 +4154,13 @@
         if (!ozonSkus.length) {
           throw new Error('Не найден Ozon SKU у товаров — обновите ассортимент и повторите');
         }
-        setSupplyStatus('Загружаю продажи по кластерам из Ozon (это может занять минуту)…', false);
+        const clusterCount = clusterIdsForAnalytics(idToName, table).length;
+        setSupplyStatus('Загружаю продажи по ' + clusterCount + ' кластерам (параллельно)…', false);
         const salesMap = await fetchClusterSalesFromDeliveryTime(
           ozonSkus,
           idToName,
           skuAliases,
-          (cur, tot) => setSupplyStatus('Продажи по кластерам: ' + cur + ' / ' + tot + ' SKU…', false)
+          (cur, tot) => setSupplyStatus('Кластеры: ' + cur + ' / ' + tot + ' · SKU ' + ozonSkus.length, false)
         );
         if (!state.supply.clusterSalesOk) {
           throw new Error(
