@@ -67,8 +67,125 @@
         margin-right: auto;
       }
     }
-    .supply-card--critical { border-color: #fecaca; background: linear-gradient(135deg, #fff5f5 0%, #ffffff 48%); }
-    .supply-card--warn { border-color: #fde68a; background: linear-gradient(135deg, #fffbeb 0%, #ffffff 48%); }
+    .global-loader {
+      position: fixed;
+      inset: 0;
+      z-index: 150;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      background: rgba(15, 23, 42, 0.42);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity 0.28s ease, visibility 0.28s ease;
+    }
+    .global-loader.is-active {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+    }
+    .global-loader__card {
+      width: min(100%, 20rem);
+      border-radius: 1.5rem;
+      border: 1px solid rgba(255, 255, 255, 0.65);
+      background: linear-gradient(165deg, #ffffff 0%, #f8fafc 100%);
+      padding: 1.75rem 1.5rem 1.5rem;
+      text-align: center;
+      box-shadow: 0 24px 60px rgba(0, 91, 255, 0.18), 0 8px 24px rgba(15, 23, 42, 0.12);
+      animation: loaderCardIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+    @keyframes loaderCardIn {
+      from { opacity: 0; transform: translateY(12px) scale(0.96); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .global-loader__visual {
+      position: relative;
+      width: 4.5rem;
+      height: 4.5rem;
+      margin: 0 auto 1.25rem;
+    }
+    .global-loader__ring {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 3px solid transparent;
+      animation: loaderSpin 1.1s cubic-bezier(0.55, 0.1, 0.35, 0.9) infinite;
+    }
+    .global-loader__ring:nth-child(1) {
+      border-top-color: #005bff;
+      border-right-color: rgba(0, 91, 255, 0.25);
+      animation-duration: 0.95s;
+    }
+    .global-loader__ring:nth-child(2) {
+      inset: 0.45rem;
+      border-bottom-color: #38bdf8;
+      border-left-color: rgba(56, 189, 248, 0.2);
+      animation-duration: 1.25s;
+      animation-direction: reverse;
+    }
+    .global-loader__ring:nth-child(3) {
+      inset: 0.9rem;
+      border-top-color: #818cf8;
+      animation-duration: 0.75s;
+    }
+    .global-loader__core {
+      position: absolute;
+      inset: 1.35rem;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #005bff, #38bdf8);
+      box-shadow: 0 0 24px rgba(0, 91, 255, 0.45);
+      animation: loaderPulse 1.4s ease-in-out infinite;
+    }
+    @keyframes loaderSpin {
+      to { transform: rotate(360deg); }
+    }
+    @keyframes loaderPulse {
+      0%, 100% { transform: scale(0.92); opacity: 0.85; }
+      50% { transform: scale(1.06); opacity: 1; }
+    }
+    .global-loader__text {
+      font-size: 0.9375rem;
+      font-weight: 600;
+      color: #0f172a;
+      letter-spacing: -0.01em;
+    }
+    .global-loader__sub {
+      margin-top: 0.35rem;
+      font-size: 0.75rem;
+      color: #64748b;
+    }
+    .global-loader__dots::after {
+      content: '';
+      animation: loaderDots 1.2s steps(4, end) infinite;
+    }
+    @keyframes loaderDots {
+      0% { content: ''; }
+      25% { content: '.'; }
+      50% { content: '..'; }
+      75% { content: '...'; }
+    }
+    tr.assort-skeleton td {
+      padding: 0.85rem 0.75rem;
+    }
+    .skel {
+      display: block;
+      height: 0.75rem;
+      border-radius: 0.375rem;
+      background: linear-gradient(90deg, #e2e8f0 0%, #f1f5f9 45%, #e2e8f0 90%);
+      background-size: 200% 100%;
+      animation: skelShimmer 1.2s ease-in-out infinite;
+    }
+    .skel--lg { height: 2.75rem; width: 2.75rem; border-radius: 0.5rem; }
+    .skel--md { width: 70%; }
+    .skel--sm { width: 45%; margin-top: 0.35rem; }
+    @keyframes skelShimmer {
+      0% { background-position: 100% 0; }
+      100% { background-position: -100% 0; }
+    }
   </style>
 </head>
 <body class="min-h-screen w-full bg-slate-100 text-slate-800 antialiased">
@@ -116,11 +233,10 @@
       </div>
     </section>
 
-    <nav class="grid w-full grid-cols-1 gap-2 min-[420px]:grid-cols-2 lg:grid-cols-4">
+    <nav class="grid w-full grid-cols-1 gap-2 min-[420px]:grid-cols-3">
       <button type="button" class="tab-btn active w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium shadow-sm sm:px-4" data-tab="tab-calc">🧮 Быстрый калькулятор</button>
       <button type="button" class="tab-btn w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-600 shadow-sm sm:px-4" data-tab="tab-assort">📦 Мой ассортимент (из API)</button>
       <button type="button" class="tab-btn w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-600 shadow-sm sm:px-4" data-tab="tab-analytics">📊 Сводка ЛК</button>
-      <button type="button" class="tab-btn w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-600 shadow-sm sm:px-4" data-tab="tab-supply">🚚 Поставки</button>
     </nav>
 
     <section id="tab-calc" class="tab-panel active w-full min-w-0">
@@ -351,30 +467,20 @@
       </div>
     </section>
 
-    <section id="tab-supply" class="tab-panel">
-      <div class="space-y-4">
-        <div class="rounded-2xl border border-slate-100 bg-white p-4 shadow-lg sm:p-6">
-          <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Поставки · FBO</h2>
-              <p class="mt-1 text-xs text-slate-500">Продажи по кластерам · остатки FBO · наценки · кэш 30 мин</p>
-            </div>
-            <button id="btnSupplyLoad" type="button" class="rounded-xl bg-ozon px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-ozon-dark disabled:opacity-50">Обновить поставки</button>
-          </div>
-          <label class="mb-3 block text-sm">
-            <span class="sr-only">Поиск</span>
-            <input id="supplySearch" type="search" autocomplete="off" placeholder="Поиск по названию или артикулу…" class="w-full max-w-md rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-ozon focus:outline-none focus:ring-2 focus:ring-ozon/20" />
-          </label>
-          <p id="supplyHint" class="text-xs text-slate-500">Подключите Ozon API и откройте вкладку для расчёта.</p>
-          <p id="supplyStatus" class="mt-2 hidden text-sm text-slate-600"></p>
-          <p id="supplyError" class="mt-2 hidden text-sm text-red-600"></p>
-          <div id="supplySummary" class="mt-4 hidden grid gap-3 sm:grid-cols-2 lg:grid-cols-4"></div>
-        </div>
-        <div id="supplyList" class="space-y-3"></div>
-      </div>
-    </section>
-
   </main>
+  </div>
+
+  <div id="globalLoader" class="global-loader" role="status" aria-live="polite" aria-busy="false">
+    <div class="global-loader__card">
+      <div class="global-loader__visual">
+        <span class="global-loader__ring" aria-hidden="true"></span>
+        <span class="global-loader__ring" aria-hidden="true"></span>
+        <span class="global-loader__ring" aria-hidden="true"></span>
+        <span class="global-loader__core" aria-hidden="true"></span>
+      </div>
+      <p id="globalLoaderTitle" class="global-loader__text">Загрузка<span class="global-loader__dots"></span></p>
+      <p id="globalLoaderSub" class="global-loader__sub"></p>
+    </div>
   </div>
 
   <div id="paywallModal" class="fixed inset-0 z-[200] hidden items-center justify-center bg-slate-900/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="paywallTitle">
@@ -421,13 +527,8 @@
     const LS_COMMISSION_TABLE = 'ozon_ue_commission_table_2026';
     const LS_DASH_FROM = 'ozon_ue_dash_from';
     const LS_DASH_TO = 'ozon_ue_dash_to';
-    const LS_SUPPLY_CACHE = 'ozon_ue_supply_cache_v2';
-    const SUPPLY_CACHE_TTL_MS = 30 * 60 * 1000;
     const COMMISSION_SHEET_ID = '1Kh31uRcKJJ5SU-TZHBtsBlZ4W4SH9QzT1eJA78dcBtY';
     const LOGISTICS_SHEET_ID = '1FNqyAsIcI3wCrVvqnQmo1gEWdOzsp00Z64eKhpNgy7Y';
-    const SURCHARGE_SHEET_ID = '1FW26Z82I6_H8M2h4pOyb3OP3Jd0TaL_CsAQ4FOthshA';
-    const SUPPLY_DAYS = 30;
-    const SUPPLY_COVER_DAYS = 21;
     const COMMISSION_TABLE_URL = 'unit.xlsx';
     const ACQUIRING_RATE = 1.5;
     const FBS_FEE = 35;
@@ -444,21 +545,6 @@
       dashboard: { loading: false, loaded: false, data: null, charts: {} },
       subscriptionBlocked: false,
       subscription: null,
-      supply: {
-        loading: false,
-        loaded: false,
-        search: '',
-        items: [],
-        surchargeTable: null,
-        clusterMap: new Map(),
-        clusterLabels: [],
-        clusterIdToName: new Map(),
-        clusterSalesOk: false,
-        fboOrders7d: 0,
-        surchargeExempt: false,
-        error: '',
-        analyticsNote: '',
-      },
     };
     const tg = window.Telegram?.WebApp;
     let tgId = '';
@@ -550,6 +636,23 @@
         clientId: $('clientId').value.trim() || DEV_CLIENT_ID,
         apiKey: $('apiKey').value.trim() || DEV_API_KEY,
       };
+    }
+    function hasUserApiCredentials() {
+      const cid = ($('clientId')?.value || '').trim() || localStorage.getItem(LS_CID) || '';
+      const key = ($('apiKey')?.value || '').trim() || localStorage.getItem(LS_KEY) || '';
+      return Boolean(cid && key);
+    }
+    function setAppLoading(show, title, sub) {
+      const el = $('globalLoader');
+      if (!el) return;
+      const titleEl = $('globalLoaderTitle');
+      const subEl = $('globalLoaderSub');
+      if (titleEl && title != null) {
+        titleEl.innerHTML = String(title) + '<span class="global-loader__dots"></span>';
+      }
+      if (subEl && sub != null) subEl.textContent = String(sub);
+      el.classList.toggle('is-active', !!show);
+      el.setAttribute('aria-busy', show ? 'true' : 'false');
     }
     function proxyReady() {
       return /^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(CORS_PROXY) && !CORS_PROXY.includes('PASTE_');
@@ -2089,7 +2192,11 @@
     async function loadAssortment() {
       let products = [];
       let fromApi = false;
+      const showDemo = !state.connected && !hasUserApiCredentials();
       if (state.connected) {
+        state.dataLoading = true;
+        renderAssortment();
+        setAppLoading(true, 'Загрузка ассортимента', 'Получаем товары из Ozon API…');
         $('assortHint').textContent = 'Загружаю товары из Ozon API...';
         try {
           const listItems = await fetchAllProductListItems();
@@ -2102,15 +2209,19 @@
           }
         } catch (_) {
           products = [];
+        } finally {
+          state.dataLoading = false;
         }
       }
       if (!fromApi) {
-        if (state.connected) {
-          products = [];
-          $('assortHint').textContent = 'API не вернул товары' + (state.lastApiError ? ' · ' + state.lastApiError : '');
-        } else {
+        if (showDemo) {
           products = DEMO_PRODUCTS.map(normalizeProduct);
           $('assortHint').textContent = 'Демо-товары (подключите API)';
+        } else {
+          products = [];
+          $('assortHint').textContent = state.connected
+            ? 'API не вернул товары' + (state.lastApiError ? ' · ' + state.lastApiError : '')
+            : 'Подключите API для загрузки каталога';
         }
       }
       state.products = products;
@@ -2119,24 +2230,31 @@
 
     async function loadAllData() {
       try {
-        const tree = await apiPost('/v1/description-category/tree', { language: 'RU' });
-        if (tree.ok) {
-          state.categoryTypes = flattenOzonTypes(tree.data?.result || tree.data?.categories || [], [])
-            .sort((a, b) => a.label.localeCompare(b.label, 'ru'));
-          initCategoryCombobox();
-        }
-      } catch (_) {}
-      try {
-        await loadCommissionTable();
-      } catch (_) {}
-      try {
-        await loadLogisticsTable();
-      } catch (_) {}
-      try {
-        await fetchTariff();
-        recalc();
-      } catch (_) {}
-      await loadAssortment();
+        setAppLoading(true, 'Загрузка данных', 'Категории Ozon…');
+        try {
+          const tree = await apiPost('/v1/description-category/tree', { language: 'RU' });
+          if (tree.ok) {
+            state.categoryTypes = flattenOzonTypes(tree.data?.result || tree.data?.categories || [], [])
+              .sort((a, b) => a.label.localeCompare(b.label, 'ru'));
+            initCategoryCombobox();
+          }
+        } catch (_) {}
+        setAppLoading(true, 'Загрузка данных', 'Комиссии и логистика…');
+        try {
+          await loadCommissionTable();
+        } catch (_) {}
+        try {
+          await loadLogisticsTable();
+        } catch (_) {}
+        setAppLoading(true, 'Загрузка данных', 'Тарифы и ассортимент…');
+        try {
+          await fetchTariff();
+          recalc();
+        } catch (_) {}
+        await loadAssortment();
+      } finally {
+        setAppLoading(false);
+      }
     }
 
     function getRowScheme(offerId) {
@@ -2223,6 +2341,17 @@
     function renderAssortment() {
       const tbody = $('assortBody');
       tbody.innerHTML = '';
+      if (state.dataLoading) {
+        for (let i = 0; i < 6; i++) {
+          const tr = document.createElement('tr');
+          tr.className = 'assort-skeleton border-b border-slate-50';
+          tr.innerHTML =
+            '<td class="py-3 pr-3"><div class="flex min-w-[200px] items-center gap-3"><span class="skel skel--lg"></span><div class="flex-1 space-y-1"><span class="skel skel--md"></span><span class="skel skel--sm"></span></div></div></td>' +
+            '<td class="py-3 pr-3"><span class="skel skel--sm"></span></td>'.repeat(11);
+          tbody.appendChild(tr);
+        }
+        return;
+      }
       const visible = filteredProducts();
       if (!state.products.length) {
         const tr = document.createElement('tr');
@@ -2342,15 +2471,18 @@
       btn.textContent = 'Подключение…';
       state.apiOk = false;
       state.apiLog = [];
+      setAppLoading(true, 'Подключение к Ozon', 'Проверяем API-ключ…');
       try {
         const { ok, status, raw } = await testOzonConnection();
         if (status === 401 || status === 403) {
           setStatus(false);
           showAuthError('Неверный Client-ID или API-Key');
+          setAppLoading(false);
           return;
         }
         if (!ok) {
           setStatus(false);
+          setAppLoading(false);
           if (status === 503) {
             showAuthError(
               (raw?.error || raw?.message || 'Нет доступа к Google Таблице Users.') +
@@ -2364,6 +2496,7 @@
         }
         setStatus(true);
         state.dataLoading = true;
+        renderAssortment();
         $('assortHint').textContent = 'Загружаю каталог и таблицу комиссий…';
         try {
           await loadAllData();
@@ -2371,15 +2504,15 @@
           showAuthError(err?.message || String(err));
         } finally {
           state.dataLoading = false;
-          btn.disabled = false;
-          btn.textContent = btnLabel;
         }
         return;
       } catch (e) {
         setStatus(false);
         showAuthError(e?.message || String(e));
-        await loadAssortment();
       } finally {
+        state.dataLoading = false;
+        renderAssortment();
+        setAppLoading(false);
         btn.disabled = false;
         btn.textContent = btnLabel;
       }
@@ -3214,1103 +3347,6 @@
       updateDashTaxInfo();
     }
 
-    /* ========== Вкладка «Поставки» (изолированный модуль) ========== */
-    function parsePercentCell(value) {
-      if (value == null || value === '') return null;
-      const s = String(value).replace(/\s/g, '').replace('%', '').replace(',', '.');
-      const m = s.match(/-?\d+(?:\.\d+)?/);
-      if (!m) return null;
-      const n = parseFloat(m[0]);
-      if (!Number.isFinite(n)) return null;
-      return n > 1 && n <= 100 ? n : n <= 1 && n > 0 ? n * 100 : n;
-    }
-
-    function parseSurchargeRows(rows) {
-      const nonEmpty = (rows || []).filter((r) => (r || []).some((c) => String(c || '').trim()));
-      if (!nonEmpty.length) throw new Error('Таблица наценок пуста');
-      let headerRow = nonEmpty.findIndex((r) => {
-        const line = r.map((c) => normalizeText(c)).join(' ');
-        return line.includes('кластер') || line.includes('наценк') || line.includes('отгруз');
-      });
-      if (headerRow < 0) headerRow = 0;
-      const headers = (nonEmpty[headerRow] || []).map((c) => String(c || '').trim());
-      const h0 = normalizeText(headers[0]);
-      const h1 = normalizeText(headers[1] || '');
-
-      /** FinSeller-Lokalization: «Кластер доставки» | «Наценка за продажу вне локального кластера» */
-      const isDeliveryList =
-        h0.includes('кластер') &&
-        (h1.includes('наценк') || h1.includes('вне локальн') || h1.includes('продаж')) &&
-        headers.filter(Boolean).length <= 3;
-      if (isDeliveryList) {
-        const byDelivery = new Map();
-        const labelByKey = new Map();
-        for (let i = headerRow + 1; i < nonEmpty.length; i++) {
-          const r = nonEmpty[i] || [];
-          const clusterLabel = String(r[0] || '').trim();
-          if (!clusterLabel) continue;
-          const pct = parsePercentCell(r[1]);
-          if (pct == null) continue;
-          const key = normCluster(clusterLabel);
-          byDelivery.set(key, { pct, label: clusterLabel });
-          labelByKey.set(key, clusterLabel);
-        }
-        if (!byDelivery.size) throw new Error('Не найдены наценки по кластерам доставки');
-        return { format: 'delivery', byDelivery, labelByKey, source: 'sheet' };
-      }
-
-      const destCols = [];
-      headers.forEach((h, idx) => {
-        if (idx === 0) return;
-        if (!h) return;
-        const t = normalizeText(h);
-        if (t.includes('объем') || t.includes('литр') || t.includes('тариф')) return;
-        destCols.push({ idx, label: h, key: normCluster(h) });
-      });
-      if (!destCols.length) {
-        for (let j = 1; j < Math.min(headers.length, 20); j++) {
-          if (headers[j]) destCols.push({ idx: j, label: headers[j], key: normCluster(headers[j]) });
-        }
-      }
-      const byOrigin = new Map();
-      const labelByKey = new Map();
-      for (let i = headerRow + 1; i < nonEmpty.length; i++) {
-        const r = nonEmpty[i] || [];
-        const originLabel = String(r[0] || '').trim();
-        if (!originLabel) continue;
-        const originKey = normCluster(originLabel);
-        labelByKey.set(originKey, originLabel);
-        const dest = {};
-        destCols.forEach((col) => {
-          const pct = parsePercentCell(r[col.idx]);
-          if (pct == null) return;
-          dest[col.key] = { pct, label: col.label };
-          labelByKey.set(col.key, col.label);
-        });
-        if (Object.keys(dest).length) byOrigin.set(originKey, { originLabel, dest });
-      }
-      if (!byOrigin.size) throw new Error('Не распознан формат таблицы наценок');
-      return { format: 'matrix', byOrigin, labelByKey, destCols: destCols.map((c) => c.label), source: 'sheet' };
-    }
-
-    async function loadSupplySurchargeTable() {
-      try {
-        const result = await proxyCall({
-          action: 'getCommissionSheet',
-          spreadsheetId: SURCHARGE_SHEET_ID,
-        });
-        if (!result.ok) throw new Error(result.error || 'HTTP ' + result.status);
-        const rows = result.data?.rows;
-        if (!Array.isArray(rows) || !rows.length) throw new Error('Пустая таблица наценок');
-        const table = parseSurchargeRows(rows);
-        table.source = 'google-sheet';
-        state.supply.surchargeTable = table;
-        return table;
-      } catch (sheetErr) {
-        console.warn('Surcharge sheet via proxy failed', sheetErr);
-      }
-      const urls = [
-        'https://docs.google.com/spreadsheets/d/' + SURCHARGE_SHEET_ID + '/export?format=csv&gid=0',
-        'https://docs.google.com/spreadsheets/d/' + SURCHARGE_SHEET_ID + '/gviz/tq?tqx=out:csv',
-      ];
-      for (const url of urls) {
-        try {
-          const res = await fetch(url, { cache: 'no-store', mode: 'cors' });
-          const text = await res.text();
-          if (!res.ok || text.trim().startsWith('<')) continue;
-          const table = parseSurchargeRows(parseCsvRows(text));
-          table.source = 'google-sheet-csv';
-          state.supply.surchargeTable = table;
-          return table;
-        } catch (_) { /* next */ }
-      }
-      throw new Error('Не удалось загрузить таблицу наценок. Откройте доступ к таблице для Apps Script.');
-    }
-
-    function surchargePct(table, fromKey, toKey) {
-      if (!table || !fromKey || !toKey || fromKey === toKey) return 0;
-      if (table.format === 'delivery' || table.byDelivery) {
-        return table.byDelivery.get(toKey)?.pct ?? 0;
-      }
-      const row = table.byOrigin?.get(fromKey);
-      return row?.dest?.[toKey]?.pct ?? 0;
-    }
-
-    function deliverySurchargePct(table, deliveryKey) {
-      if (!table?.byDelivery) return 0;
-      return table.byDelivery.get(deliveryKey)?.pct ?? 0;
-    }
-
-    function clusterLabel(table, key) {
-      return table?.labelByKey?.get(key) || state.supply.clusterMap.get(key)?.name || key;
-    }
-
-    function resolveClusterName(raw, table) {
-      const t = normCluster(raw);
-      if (!t) return '';
-      if (table?.labelByKey?.has(t)) return t;
-      for (const k of table?.labelByKey?.keys() || []) {
-        if (t.includes(k) || k.includes(t)) return k;
-      }
-      for (const k of state.supply.clusterLabels || []) {
-        const nk = normCluster(k);
-        if (t.includes(nk) || nk.includes(t)) return nk;
-      }
-      return t;
-    }
-
-    async function fetchOzonClusterMap() {
-      const map = new Map();
-      const idToName = new Map();
-      const labels = [];
-      let res = await apiPost('/v1/cluster/list', { cluster_type: 'CLUSTER_TYPE_OZON' });
-      if (!res.ok) res = await apiPost('/v1/cluster/list', {});
-      const clusters = res.data?.clusters || res.data?.result?.clusters || [];
-      (clusters || []).forEach((cl) => {
-        const cid = String(cl.id ?? cl.cluster_id ?? '');
-        const name = cl.name || cl.cluster_name || cl.title || '';
-        const key = resolveClusterName(name, state.supply.surchargeTable);
-        if (!key) return;
-        if (cid) idToName.set(cid, name);
-        labels.push(name);
-        (cl.logistic_clusters || cl.warehouses || []).forEach((w) => {
-          const wid = String(w.warehouse_id || w.id || '');
-          const wname = w.name || w.warehouse_name || '';
-          if (wid) map.set(wid, { key, name, id: cid });
-          if (wname) map.set(normCluster(wname), { key, name, id: cid });
-        });
-        map.set(key, { key, name, id: cid });
-      });
-      if (!labels.length && state.logisticsTables?.FBO?.origins?.length) {
-        state.logisticsTables.FBO.origins.forEach((o) => {
-          const key = normCluster(o);
-          labels.push(o);
-          map.set(key, { key, name: o, id: '' });
-        });
-      }
-      state.supply.clusterMap = map;
-      state.supply.clusterIdToName = idToName;
-      state.supply.clusterLabels = [...new Set(labels)];
-      return { map, idToName };
-    }
-
-    async function fetchFboOrders7d() {
-      const to = new Date();
-      const from = new Date();
-      from.setDate(from.getDate() - 6);
-      const res = await apiPost('/v1/analytics/data', {
-        date_from: formatYmdLocal(from),
-        date_to: formatYmdLocal(to),
-        metrics: ['ordered_units'],
-        dimension: ['day'],
-        filters: [],
-        sort: [{ key: 'day', order: 'ASC' }],
-        limit: 100,
-        offset: 0,
-      });
-      if (!res.ok) return 0;
-      const data = res.data?.result?.data || res.data?.data || [];
-      let units = 0;
-      data.forEach((row) => {
-        units += Number(row.metrics?.[0]) || 0;
-      });
-      const totals = res.data?.result?.totals || res.data?.totals;
-      if (Array.isArray(totals) && totals[0] != null) units = Number(totals[0]) || units;
-      return units;
-    }
-
-    function isDemoCatalog(products) {
-      const list = products || state.products || [];
-      if (!list.length) return true;
-      return list.every((p) => DEMO_PRODUCTS.some((d) => d.offer_id === p.offer_id));
-    }
-
-    function cloneClusterSalesMap(src) {
-      const out = new Map();
-      (src || new Map()).forEach((v, k) => {
-        const byOrigin = new Map();
-        (v.byOrigin || new Map()).forEach((cnt, ok) => byOrigin.set(ok, cnt));
-        out.set(k, { units: v.units || 0, revenue: v.revenue || 0, byOrigin });
-      });
-      return out;
-    }
-
-    function publishSkuSales(sales, sku, skuMap, skuAliases) {
-      const keys = skuAliases?.get(String(sku)) || [String(sku)];
-      const cloned = cloneClusterSalesMap(skuMap);
-      keys.forEach((alias) => sales.set(alias, cloneClusterSalesMap(cloned)));
-    }
-
-    const SUPPLY_GAS_BATCH = 18;
-    const SUPPLY_GAS_PARALLEL = 2;
-
-    function supplyCacheKey(productIds) {
-      const creds = apiCredentials();
-      const sorted = [...productIds].map(String).filter(Boolean).sort();
-      return (creds.clientId || 'no-cid') + '|' + sorted.length + '|' + sorted.join(',');
-    }
-
-    function readSupplyCache(productIds) {
-      try {
-        const raw = localStorage.getItem(LS_SUPPLY_CACHE);
-        if (!raw) return null;
-        const box = JSON.parse(raw);
-        if (!box || !box.ts || !box.items) return null;
-        if (Date.now() - box.ts > SUPPLY_CACHE_TTL_MS) return null;
-        if (box.key !== supplyCacheKey(productIds)) return null;
-        return box;
-      } catch (_) {
-        return null;
-      }
-    }
-
-    function writeSupplyCache(productIds, payload) {
-      try {
-        localStorage.setItem(
-          LS_SUPPLY_CACHE,
-          JSON.stringify({
-            ts: Date.now(),
-            key: supplyCacheKey(productIds),
-            ...payload,
-          })
-        );
-      } catch (e) {
-        console.warn('Supply cache write failed', e);
-      }
-    }
-
-    function applySupplyCache(box) {
-      state.supply.items = box.items || [];
-      state.supply.loaded = true;
-      state.supply.clusterSalesOk = !!box.clusterSalesOk;
-      state.supply.analyticsNote = box.analyticsNote || '';
-      state.supply.fboOrders7d = box.fboOrders7d || 0;
-      state.supply.surchargeExempt = !!box.surchargeExempt;
-      state.supply.error = '';
-    }
-
-    function supplyCacheAgeMinutes(ts) {
-      return Math.max(0, Math.round((Date.now() - ts) / 60000));
-    }
-
-    async function proxySupplyClusterBatch(clusterIds) {
-      const creds = apiCredentials();
-      const result = await proxyCall({
-        action: 'fetchSupplyClusterSales',
-        clientId: creds.clientId,
-        apiKey: creds.apiKey,
-        clusterIds: clusterIds.map(String),
-        delivery_schema: 'FBO',
-        supply_period: 'FOUR_WEEKS',
-      });
-      if (!result.ok) {
-        throw new Error(result.error || 'Пакетная загрузка кластеров: HTTP ' + result.status);
-      }
-      return result.data || {};
-    }
-
-    function buildCatalogKeySet(ozonSkuList, skuAliases) {
-      const keys = new Set(ozonSkuList.map(String).filter(Boolean));
-      skuAliases.forEach((group) => group.forEach((k) => keys.add(String(k))));
-      return keys;
-    }
-
-    function catalogHasSku(catalogKeys, sku, offerId) {
-      if (sku && catalogKeys.has(String(sku))) return true;
-      if (offerId && catalogKeys.has(String(offerId))) return true;
-      return false;
-    }
-
-    function clusterIdsForAnalytics(idToName, table) {
-      const ids = [];
-      const nameToId = new Map();
-      idToName.forEach((name, id) => {
-        const key = resolveClusterName(name, table);
-        if (key) nameToId.set(key, id);
-      });
-      if (table?.byDelivery?.size) {
-        table.byDelivery.forEach((_, key) => {
-          const id = nameToId.get(key);
-          if (id) ids.push(String(id));
-        });
-      }
-      if (!ids.length) {
-        idToName.forEach((_, id) => ids.push(String(id)));
-      }
-      return [...new Set(ids)];
-    }
-
-    function mergeDetailRowIntoSales(sales, row, destKey, catalogKeys, skuAliases) {
-      const sku = String(row.item?.sku || '');
-      const offer = String(row.item?.offer_id || '');
-      if (!catalogHasSku(catalogKeys, sku, offer)) return false;
-      const units = Number(row.metrics?.orders_count?.total) || 0;
-      if (units <= 0) return false;
-
-      const byOrigin = new Map();
-      (row.clusters_data || []).forEach((orig) => {
-        const oid = String(orig.cluster_id ?? '');
-        const oName = state.supply.clusterIdToName?.get(oid) || oid;
-        const oKey = resolveClusterName(oName, state.supply.surchargeTable);
-        const oc = Number(orig.orders_count) || 0;
-        if (!oKey || oc <= 0) return;
-        byOrigin.set(oKey, (byOrigin.get(oKey) || 0) + oc);
-      });
-
-      const aliasList = skuAliases.get(sku) || skuAliases.get(offer) || [sku || offer];
-      aliasList.forEach((alias) => {
-        if (!alias) return;
-        if (!sales.has(alias)) sales.set(alias, new Map());
-        const m = sales.get(alias);
-        const prev = m.get(destKey) || { units: 0, revenue: 0, byOrigin: new Map() };
-        prev.units += units;
-        byOrigin.forEach((cnt, oKey) => {
-          prev.byOrigin.set(oKey, (prev.byOrigin.get(oKey) || 0) + cnt);
-        });
-        m.set(destKey, prev);
-      });
-      return true;
-    }
-
-    function ingestClusterDetailRows(sales, clusterId, rows, idToName, catalogKeys, skuAliases) {
-      const destName = idToName.get(String(clusterId)) || String(clusterId);
-      const destKey = resolveClusterName(destName, state.supply.surchargeTable);
-      if (!destKey || !rows?.length) return 0;
-      let matched = 0;
-      rows.forEach((row) => {
-        if (mergeDetailRowIntoSales(sales, row, destKey, catalogKeys, skuAliases)) matched++;
-      });
-      return matched;
-    }
-
-    /**
-     * 2–4 запроса к прокси (пакеты по 18 кластеров на сервере), а не 30+ отдельных.
-     */
-    async function fetchClusterSalesFromDeliveryTime(ozonSkuList, idToName, skuAliases, onProgress) {
-      const sales = new Map();
-      const catalogKeys = buildCatalogKeySet(ozonSkuList, skuAliases);
-      const clusterIds = clusterIdsForAnalytics(idToName, state.supply.surchargeTable);
-      let matchedRows = 0;
-      let lastErr = '';
-      let usedBatch = false;
-
-      const gasChunks = [];
-      for (let i = 0; i < clusterIds.length; i += SUPPLY_GAS_BATCH) {
-        gasChunks.push(clusterIds.slice(i, i + SUPPLY_GAS_BATCH));
-      }
-
-      let clustersDone = 0;
-      for (let i = 0; i < gasChunks.length; i += SUPPLY_GAS_PARALLEL) {
-        const parallel = gasChunks.slice(i, i + SUPPLY_GAS_PARALLEL);
-        let packs;
-        try {
-          packs = await Promise.all(parallel.map((ids) => proxySupplyClusterBatch(ids)));
-          usedBatch = true;
-        } catch (batchErr) {
-          console.warn('Supply GAS batch failed, fallback to per-cluster', batchErr);
-          packs = null;
-        }
-
-        if (packs) {
-          packs.forEach((pack, pi) => {
-            const ids = parallel[pi];
-            const clusters = pack.clusters || {};
-            Object.keys(pack.errors || {}).forEach((cid) => {
-              const e = pack.errors[cid];
-              if (e?.message) lastErr = e.message;
-            });
-            ids.forEach((cid) => {
-              const rows = clusters[cid] || clusters[String(cid)] || [];
-              matchedRows += ingestClusterDetailRows(sales, cid, rows, idToName, catalogKeys, skuAliases);
-            });
-          });
-        } else {
-          for (const ids of parallel) {
-            for (const cid of ids) {
-              let offset = 0;
-              for (let page = 0; page < 12; page++) {
-                const res = await apiPost('/v1/analytics/average-delivery-time/details', {
-                  cluster_id: Number(cid),
-                  limit: 1000,
-                  offset,
-                  filters: { delivery_schema: 'FBO', supply_period: 'FOUR_WEEKS' },
-                });
-                if (!res.ok) {
-                  lastErr = state.lastApiError || 'Ozon details error';
-                  break;
-                }
-                const rows = res.data?.data || res.data?.result?.data || [];
-                matchedRows += ingestClusterDetailRows(sales, cid, rows, idToName, catalogKeys, skuAliases);
-                if (rows.length < 1000) break;
-                offset += 1000;
-              }
-            }
-          }
-        }
-
-        clustersDone += parallel.reduce((n, ids) => n + ids.length, 0);
-        if (onProgress) onProgress(clustersDone, clusterIds.length);
-      }
-
-      const skusWithSales = new Set();
-      sales.forEach((m, alias) => {
-        if (m.size) skusWithSales.add(alias);
-      });
-
-      state.supply.clusterSalesOk = skusWithSales.size > 0;
-      state.supply.analyticsNote = state.supply.clusterSalesOk
-        ? 'Продажи: ' +
-          (usedBatch ? 'пакет GAS' : 'по кластерам') +
-          ' · ' +
-          clusterIds.length +
-          ' класт. · SKU ' +
-          skusWithSales.size +
-          '/' +
-          ozonSkuList.length
-        : lastErr || 'Ozon не вернул продажи по кластерам (average-delivery-time/details)';
-      return sales;
-    }
-
-    function parseStocksByCluster(row, clusterMap) {
-      const byCluster = new Map();
-      let total = 0;
-      const stocks = row.stocks || row.items || [];
-      const list = Array.isArray(stocks) ? stocks : (stocks.stocks || []);
-      (list || []).forEach((s) => {
-        const type = String(s.type || s.source || '').toLowerCase();
-        if (type && (type.includes('fbs') || type.includes('rfbs')) && !type.includes('fbo')) return;
-        const qty = Number(s.present ?? s.available ?? s.stock ?? s.quantity ?? 0) || 0;
-        if (qty <= 0) return;
-        const wh = String(
-          s.warehouse_id || s.warehouse_name || s.warehouse || s.cluster_name || s.cluster || s.type || ''
-        );
-        const mapped = clusterMap.get(wh) || clusterMap.get(normCluster(wh)) || clusterMap.get(normCluster(s.warehouse_name || ''));
-        const key = mapped?.key || resolveClusterName(s.cluster_name || s.warehouse_name || wh, state.supply.surchargeTable);
-        if (!key) return;
-        total += qty;
-        byCluster.set(key, (byCluster.get(key) || 0) + qty);
-      });
-      if (!total) {
-        const fallback = Number(row.present ?? parseStocks(row)) || 0;
-        if (fallback > 0) {
-          total = fallback;
-          byCluster.set('неизвестно', fallback);
-        }
-      }
-      return { total, byCluster };
-    }
-
-    async function fetchSupplyStocksV3(productIds) {
-      const stocksByPid = new Map();
-      const stocksByOffer = new Map();
-      const skuByPid = new Map();
-      for (let i = 0; i < productIds.length; i += 100) {
-        const chunk = productIds.slice(i, i + 100).map(String);
-        let lastId = '';
-        for (let guard = 0; guard < 30; guard++) {
-          const body = { filter: { product_id: chunk, visibility: 'ALL' }, limit: 1000 };
-          if (lastId) body.last_id = lastId;
-          let res = await apiPost('/v3/product/info/stocks', body);
-          if (!res.ok) res = await apiPost('/v4/product/info/stocks', body);
-          if (!res.ok) break;
-          const items = res.data?.items || res.data?.result?.items || res.data?.result || [];
-          const rows = Array.isArray(items) ? items : [];
-          rows.forEach((row) => {
-            const pid = String(row.product_id || row.id || '');
-            const offer = String(row.offer_id || '');
-            const parsed = parseStocksByCluster(row, state.supply.clusterMap);
-            const skuVal = row.sku || row.fbo_sku || (row.stocks?.[0]?.sku);
-            if (skuVal) skuByPid.set(pid, String(skuVal));
-            if (pid) stocksByPid.set(pid, parsed);
-            if (offer) stocksByOffer.set(offer, parsed);
-          });
-          lastId = res.data?.last_id || res.data?.result?.last_id || res.data?.cursor || '';
-          if (!lastId || !rows.length) break;
-        }
-      }
-      return { stocksByPid, stocksByOffer, skuByPid };
-    }
-
-    function mapToObject(m) {
-      const o = {};
-      (m || new Map()).forEach((v, k) => {
-        o[k] = v;
-      });
-      return o;
-    }
-
-    function estimateCrossUnitsAtDest(sold, destKey, stockByCluster) {
-      if (sold <= 0) return 0;
-      let totalStock = 0;
-      stockByCluster.forEach((q) => {
-        totalStock += q;
-      });
-      if (totalStock <= 0) return sold;
-      let cross = 0;
-      stockByCluster.forEach((originStock, originKey) => {
-        if (originKey === destKey) return;
-        cross += sold * (originStock / totalStock);
-      });
-      return Math.round(cross * 10) / 10;
-    }
-
-    function analyzeClusterBreakdown(salesByCluster, stockByCluster, table, exempt) {
-      const clusters = new Set([...salesByCluster.keys(), ...stockByCluster.keys()]);
-      const rows = [];
-      let totalSold = 0;
-      let totalCross = 0;
-      let totalStock = 0;
-      clusters.forEach((c) => {
-        totalStock += stockByCluster.get(c) || 0;
-      });
-      clusters.forEach((destKey) => {
-        const sale = salesByCluster.get(destKey);
-        const sold = sale?.units ?? (typeof sale === 'number' ? sale : 0);
-        const stock = stockByCluster.get(destKey) || 0;
-        totalSold += sold;
-        let crossEst = 0;
-        let localEst = 0;
-        if (sale?.byOrigin && sale.byOrigin.size) {
-          sale.byOrigin.forEach((cnt, originKey) => {
-            if (originKey === destKey) localEst += cnt;
-            else crossEst += cnt;
-          });
-        } else {
-          localEst = sold;
-        }
-        totalCross += crossEst;
-        const daily = sold / SUPPLY_DAYS;
-        const daysLeftCluster = daily > 0 ? stock / daily : stock > 0 ? 999 : 0;
-        const pct = exempt ? 0 : deliverySurchargePct(table, destKey);
-        rows.push({
-          clusterKey: destKey,
-          clusterLabel: clusterLabel(table, destKey),
-          sold,
-          stock,
-          crossEst,
-          localEst,
-          daysLeftCluster,
-          surchargePct: pct,
-        });
-      });
-      rows.sort((a, b) => b.crossEst - a.crossEst || b.sold - a.sold);
-      return {
-        rows,
-        totalSold,
-        totalCross: Math.round(totalCross * 10) / 10,
-        crossSharePct: totalSold > 0 ? Math.round((totalCross / totalSold) * 100) : 0,
-      };
-    }
-
-    function expectedSurchargeRub(salesByCluster, stockByCluster, price, table, exempt) {
-      if (exempt || !table || price <= 0) return 0;
-      let totalOrders = 0;
-      salesByCluster.forEach((v) => {
-        totalOrders += v.units || v || 0;
-      });
-      if (totalOrders <= 0) return 0;
-      let totalStock = 0;
-      stockByCluster.forEach((q) => {
-        totalStock += q;
-      });
-      if (totalStock <= 0) return 0;
-      let cost = 0;
-      salesByCluster.forEach((sale, destKey) => {
-        const orders = sale.units || sale || 0;
-        if (orders <= 0) return;
-        if (sale?.byOrigin && sale.byOrigin.size) {
-          sale.byOrigin.forEach((cnt, originKey) => {
-            if (originKey === destKey) return;
-            const pct = surchargePct(table, originKey, destKey);
-            cost += cnt * (price * (pct / 100));
-          });
-        } else {
-          stockByCluster.forEach((stockQty, originKey) => {
-            if (originKey === destKey) return;
-            const share = totalStock > 0 ? stockQty / totalStock : 0;
-            const pct = surchargePct(table, originKey, destKey);
-            cost += orders * share * (price * (pct / 100));
-          });
-        }
-      });
-      return cost;
-    }
-
-    function buildShipmentPlan(salesByCluster, stockByCluster, table, price, exempt) {
-      const clusters = new Set([...salesByCluster.keys(), ...stockByCluster.keys()]);
-      const plan = [];
-      let totalSales = 0;
-      const salesObj = {};
-      const stockObj = {};
-      clusters.forEach((c) => {
-        const u = salesByCluster.get(c)?.units ?? salesByCluster.get(c) ?? 0;
-        const s = stockByCluster.get(c) || 0;
-        salesObj[c] = u;
-        stockObj[c] = s;
-        totalSales += u;
-      });
-      const breakdown = analyzeClusterBreakdown(salesByCluster, stockByCluster, table, exempt);
-      if (totalSales <= 0) {
-        return { plan, savingsPct: 0, salesObj, stockObj, breakdown };
-      }
-      const before = expectedSurchargeRub(salesByCluster, stockByCluster, price, table, exempt);
-      const targetDays = SUPPLY_COVER_DAYS;
-      breakdown.rows.forEach((row) => {
-        const destKey = row.clusterKey;
-        const sold = row.sold;
-        const daily = sold / SUPPLY_DAYS;
-        const have = row.stock;
-        let need = Math.max(0, Math.ceil(daily * targetDays) - have);
-        const crossEst = row.crossEst;
-        const pct = row.surchargePct;
-        if (crossEst > 0 && pct > 0 && need === 0) {
-          need = Math.max(need, Math.ceil((crossEst / SUPPLY_DAYS) * 14));
-        }
-        if (need <= 0) return;
-        const daysLeftCluster = row.daysLeftCluster;
-        const oosUrgent = daysLeftCluster <= 7;
-        const oosSoon = daysLeftCluster <= 14;
-        let marginal = 0;
-        if (totalSales > 0 && pct > 0) {
-          marginal = (sold / totalSales) * pct;
-        }
-        const score =
-          need * (oosUrgent ? 3 : oosSoon ? 1.6 : 1) * (1 + marginal / 25) + crossEst * (pct / 10);
-        const reasons = [];
-        if (oosUrgent) reasons.push('OOS');
-        else if (oosSoon) reasons.push('запас');
-        if (crossEst > 0 && pct > 0) reasons.push('локализация');
-        plan.push({
-          clusterKey: destKey,
-          clusterLabel: row.clusterLabel,
-          qty: need,
-          marginal,
-          daily,
-          crossEst,
-          daysLeftCluster,
-          score,
-          reason: reasons.length ? reasons.join(' + ') : 'спрос',
-        });
-      });
-      plan.sort((a, b) => b.score - a.score || b.qty - a.qty);
-      const simStock = new Map(stockByCluster);
-      plan.forEach((p) => {
-        simStock.set(p.clusterKey, (simStock.get(p.clusterKey) || 0) + p.qty);
-      });
-      const simSales = new Map();
-      Object.keys(salesObj).forEach((k) => simSales.set(k, { units: salesObj[k] }));
-      const after = expectedSurchargeRub(simSales, simStock, price, table, exempt);
-      const savingsPct = before > 0 ? Math.round(((before - after) / before) * 100) : 0;
-      return { plan, savingsPct, salesObj, stockObj, before, after, breakdown };
-    }
-
-    function buildSkuAliasMap(products, skuByPid) {
-      const map = new Map();
-      products.forEach((p) => {
-        const pid = String(p.product_id || '');
-        const offer = String(p.offer_id || '');
-        const ozonSku = String(skuByPid.get(pid) || p.ozon_sku || '').trim();
-        const group = [...new Set([ozonSku, pid, offer].filter((x) => x && x !== 'undefined' && x !== '0'))];
-        group.forEach((k) => map.set(k, group));
-      });
-      return map;
-    }
-
-    function salesMapForProduct(salesMap, product, sku) {
-      const keys = [String(sku || ''), String(product.product_id || ''), String(product.offer_id || '')].filter(Boolean);
-      for (let i = 0; i < keys.length; i++) {
-        if (salesMap.has(keys[i])) return salesMap.get(keys[i]);
-      }
-      return new Map();
-    }
-
-    function buildSupplyItem(product, salesMap, stockParsed, table, exempt) {
-      const sku = String(product.ozon_sku || product.sku || product.product_id || product.offer_id || '');
-      const salesByCluster = salesMapForProduct(salesMap, product, sku);
-      const stockByCluster = stockParsed?.byCluster || new Map();
-      const totalStock = stockParsed?.total ?? product.stock ?? 0;
-      let units30 = 0;
-      let revenue30 = 0;
-      salesByCluster.forEach((v) => {
-        units30 += v.units || 0;
-        revenue30 += v.revenue || 0;
-      });
-      const avgDaily = units30 > 0 ? units30 / SUPPLY_DAYS : 0;
-      const daysLeft = avgDaily > 0 ? totalStock / avgDaily : totalStock > 0 ? 999 : 0;
-      const revPerDay = revenue30 > 0 ? revenue30 / SUPPLY_DAYS : (product.price || 0) * avgDaily;
-      const price = Number(product.price) || 0;
-      const { plan, savingsPct, salesObj, stockObj, before, after, breakdown } = buildShipmentPlan(
-        salesByCluster,
-        stockByCluster,
-        table,
-        price,
-        exempt
-      );
-      return {
-        offer_id: product.offer_id,
-        name: product.name,
-        image: product.image,
-        price,
-        totalStock,
-        units30,
-        avgDaily,
-        daysLeft,
-        revPerDay,
-        salesByCluster: mapToObject(salesByCluster),
-        stockByCluster: mapToObject(stockByCluster),
-        plan,
-        savingsPct,
-        salesObj,
-        stockObj,
-        surchargeBefore: before,
-        surchargeAfter: after,
-        totalCross: breakdown?.totalCross ?? 0,
-        crossSharePct: breakdown?.crossSharePct ?? 0,
-        clusterRows: breakdown?.rows ?? [],
-      };
-    }
-
-    function renderClusterBreakdownHtml(it) {
-      const rows = (it.clusterRows || []).filter((r) => r.sold > 0 || r.stock > 0);
-      if (!rows.length) {
-        return '<p class="mt-2 text-xs text-slate-400">Нет продаж по кластерам за 30 дн. — проверьте подключение API или дождитесь первых заказов.</p>';
-      }
-      const head =
-        '<thead><tr class="text-left text-[10px] uppercase text-slate-400">' +
-        '<th class="py-1 pr-2">Кластер</th><th class="py-1 pr-2">Продажи</th><th class="py-1 pr-2">Остаток</th>' +
-        '<th class="py-1 pr-2">Скаталось</th><th class="py-1">Дней запаса</th></tr></thead>';
-      const body = rows
-        .slice(0, 8)
-        .map((r) => {
-          const crossCls = r.crossEst > 0 ? 'font-semibold text-amber-800' : 'text-slate-500';
-          const days =
-            r.sold > 0
-              ? r.daysLeftCluster <= 7
-                ? '<span class="text-red-600 font-medium">' + Math.ceil(r.daysLeftCluster) + '</span>'
-                : String(Math.ceil(r.daysLeftCluster))
-              : '—';
-          return (
-            '<tr class="border-t border-slate-50 text-xs">' +
-            '<td class="py-1.5 pr-2 max-w-[120px] truncate" title="' +
-            escapeHtml(r.clusterLabel) +
-            '">' +
-            escapeHtml(r.clusterLabel) +
-            '</td>' +
-            '<td class="py-1.5 pr-2 tabular-nums">' +
-            r.sold +
-            '</td>' +
-            '<td class="py-1.5 pr-2 tabular-nums">' +
-            r.stock +
-            '</td>' +
-            '<td class="py-1.5 pr-2 tabular-nums ' +
-            crossCls +
-            '">' +
-            (r.crossEst > 0 ? '~' + r.crossEst : '0') +
-            (r.surchargePct > 0 && r.crossEst > 0 ? ' · ' + r.surchargePct + '%' : '') +
-            '</td>' +
-            '<td class="py-1.5 tabular-nums">' +
-            days +
-            '</td></tr>'
-          );
-        })
-        .join('');
-      return (
-        '<div class="mt-2 overflow-x-auto"><table class="w-full min-w-[320px]">' +
-        head +
-        '<tbody>' +
-        body +
-        '</tbody></table></div>'
-      );
-    }
-
-    function supplyUrgency(daysLeft) {
-      if (daysLeft <= 0 || !Number.isFinite(daysLeft)) return 'critical';
-      if (daysLeft <= 7) return 'critical';
-      if (daysLeft <= 14) return 'warn';
-      return 'ok';
-    }
-
-    function setSupplyStatus(text, isError) {
-      const st = $('supplyStatus');
-      const er = $('supplyError');
-      if (st) {
-        st.textContent = text || '';
-        st.classList.toggle('hidden', !text || isError);
-      }
-      if (er) {
-        er.textContent = isError ? text || '' : '';
-        er.classList.toggle('hidden', !isError);
-      }
-    }
-
-    function renderSupplySummary(items) {
-      const el = $('supplySummary');
-      if (!el) return;
-      const critical = items.filter((it) => supplyUrgency(it.daysLeft) === 'critical').length;
-      const warn = items.filter((it) => supplyUrgency(it.daysLeft) === 'warn').length;
-      const lostPerDay = items
-        .filter((it) => supplyUrgency(it.daysLeft) === 'critical')
-        .reduce((s, it) => s + (it.revPerDay || 0), 0);
-      el.innerHTML =
-        '<div class="rounded-xl border border-red-100 bg-red-50/80 p-3"><p class="text-xs text-red-700">Критично (≤7 дн.)</p><p class="text-2xl font-bold text-red-700">' + critical + '</p></div>' +
-        '<div class="rounded-xl border border-amber-100 bg-amber-50/80 p-3"><p class="text-xs text-amber-800">Скоро (8–14 дн.)</p><p class="text-2xl font-bold text-amber-900">' + warn + '</p></div>' +
-        '<div class="rounded-xl border border-slate-100 bg-slate-50 p-3"><p class="text-xs text-slate-500">SKU в списке</p><p class="text-2xl font-bold text-slate-800">' + items.length + '</p></div>' +
-        '<div class="rounded-xl border border-emerald-100 bg-emerald-50/80 p-3"><p class="text-xs text-emerald-800">Упущ. выручка/день (крит.)</p><p class="text-lg font-bold text-emerald-900">~' + rub(lostPerDay) + '</p></div>';
-      el.classList.remove('hidden');
-    }
-
-    function renderSupplyList() {
-      const list = $('supplyList');
-      const hint = $('supplyHint');
-      if (!list) return;
-      const q = normalizeText(state.supply.search || $('supplySearch')?.value || '');
-      let items = (state.supply.items || []).slice();
-      if (q) {
-        items = items.filter((it) => {
-          const hay = normalizeText(it.name + ' ' + it.offer_id);
-          return hay.includes(q);
-        });
-      }
-      items.sort((a, b) => {
-        const da = Number.isFinite(a.daysLeft) ? a.daysLeft : 9999;
-        const db = Number.isFinite(b.daysLeft) ? b.daysLeft : 9999;
-        if (da !== db) return da - db;
-        return (b.revPerDay || 0) - (a.revPerDay || 0);
-      });
-      if (!items.length) {
-        list.innerHTML = '<p class="rounded-xl border border-dashed border-slate-200 bg-white p-6 text-center text-sm text-slate-500">Нет товаров для отображения</p>';
-        return;
-      }
-      list.innerHTML = items
-        .map((it) => {
-          const urg = supplyUrgency(it.daysLeft);
-          const cardCls =
-            urg === 'critical' ? 'supply-card--critical' : urg === 'warn' ? 'supply-card--warn' : 'border-slate-100';
-          const icon = urg === 'critical' ? '⚠️ ' : urg === 'warn' ? '⏳ ' : '';
-          const daysText =
-            it.avgDaily <= 0 && it.totalStock > 0
-              ? 'нет продаж за 30 дней'
-              : it.avgDaily <= 0
-                ? 'нет остатка'
-                : it.daysLeft <= 0
-                  ? 'уже закончился'
-                  : '≈ ' + Math.max(0, Math.ceil(it.daysLeft)) + ' дн.';
-          const lost =
-            urg === 'critical' && it.revPerDay > 0
-              ? '<p class="mt-1 text-sm font-medium text-red-700">Упущенная выручка ~' + rub(it.revPerDay) + '/день · пора делать поставку!</p>'
-              : '';
-          const crossLine =
-            it.units30 > 0
-              ? '<p class="mt-2 text-sm text-amber-900"><span class="font-semibold">Межкластерно (оценка):</span> ~' +
-                (it.totalCross || 0) +
-                ' из ' +
-                it.units30 +
-                ' продаж (' +
-                (it.crossSharePct || 0) +
-                '%) — товар отгружался не из локального кластера</p>'
-              : '';
-          const planLines = (it.plan || [])
-            .slice(0, 6)
-            .map((p) => {
-              const pct = deliverySurchargePct(state.supply.surchargeTable, p.clusterKey);
-              const pctNote = pct > 0 ? ' <span class="text-slate-400">(наценка ' + pct + '%)</span>' : '';
-              const why = p.reason ? ' <span class="text-[10px] uppercase text-ozon/80">· ' + escapeHtml(p.reason) + '</span>' : '';
-              const crossNote =
-                p.crossEst > 0 ? ' <span class="text-amber-700 text-xs">· скаталось ~' + p.crossEst + '</span>' : '';
-              return (
-                '<li><span class="font-medium">' +
-                p.qty +
-                ' шт.</span> → ' +
-                escapeHtml(p.clusterLabel) +
-                pctNote +
-                why +
-                crossNote +
-                '</li>'
-              );
-            })
-            .join('');
-          const planBlock = planLines
-            ? '<ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">' + planLines + '</ul>'
-            : '<p class="mt-2 text-sm text-slate-500">Остатки покрывают спрос по кластерам на ' + SUPPLY_COVER_DAYS + ' дн.</p>';
-          const savings =
-            it.savingsPct > 0
-              ? '<p class="mt-2 text-xs text-emerald-700">Умная поставка: снизит наценки ~на ' + it.savingsPct + '% при сохранении запаса ' + SUPPLY_COVER_DAYS + ' дн.</p>'
-              : '';
-          const clusterTable = renderClusterBreakdownHtml(it);
-          const img = it.image
-            ? '<img src="' + escapeHtml(it.image) + '" alt="" class="h-14 w-14 rounded-lg object-cover bg-slate-100" loading="lazy" onerror="this.style.display=\'none\'" />'
-            : '<div class="flex h-14 w-14 items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-400">SKU</div>';
-          return (
-            '<article class="rounded-2xl border bg-white p-4 shadow-sm ' +
-            cardCls +
-            '">' +
-            '<div class="flex flex-wrap gap-3">' +
-            img +
-            '<div class="min-w-0 flex-1">' +
-            '<div class="flex flex-wrap items-start justify-between gap-2">' +
-            '<div>' +
-            '<h3 class="font-semibold text-slate-900">' +
-            icon +
-            escapeHtml(it.name) +
-            '</h3>' +
-            '<p class="text-xs text-slate-400">' +
-            escapeHtml(it.offer_id) +
-            '</p>' +
-            '</div>' +
-            '</div>' +
-            '<p class="text-sm font-medium ' +
-            (urg === 'critical' ? 'text-red-700' : urg === 'warn' ? 'text-amber-800' : 'text-slate-700') +
-            '">Остаток ' +
-            it.totalStock +
-            ' шт. · закончится через ' +
-            daysText +
-            '</p>' +
-            lost +
-            crossLine +
-            '</div>' +
-            '</div>' +
-            '<div class="mt-3 grid gap-3 border-t border-slate-100 pt-3 lg:grid-cols-2">' +
-            '<div><p class="text-xs font-semibold uppercase text-slate-400">Радар OOS · продажи по кластерам</p><p class="mt-1 text-sm text-slate-600">Всего 30д: ' +
-            (it.units30 || 0) +
-            ' шт. · ~' +
-            (it.avgDaily ? it.avgDaily.toFixed(2) : '0') +
-            ' шт./день · общий запас ~' +
-            daysText +
-            '</p>' +
-            clusterTable +
-            '</div>' +
-            '<div><p class="text-xs font-semibold uppercase text-slate-400">Умная поставка FBO</p>' +
-            '<p class="mt-1 text-[11px] text-slate-500">Спрос 30д + запас ' +
-            SUPPLY_COVER_DAYS +
-            ' дн. + меньше межкластерных наценок</p>' +
-            planBlock +
-            savings +
-            '</div></div>' +
-            '</article>'
-          );
-        })
-        .join('');
-      if (hint && state.supply.loaded) {
-        let note = 'Обновлено: ' + items.length + ' SKU · период ' + SUPPLY_DAYS + ' дн.';
-        if (state.supply.surchargeExempt) note += ' · <50 FBO-заказов за 7 дн. — наценки не считаем';
-        if (state.supply.analyticsNote) note += ' · ' + state.supply.analyticsNote;
-        hint.innerHTML = note;
-      }
-    }
-
-    async function loadSupplyTab(force) {
-      if (state.supply.loading) return;
-      if (state.supply.loaded && !force) {
-        renderSupplyList();
-        return;
-      }
-      if (!state.connected) {
-        $('supplyHint').textContent = 'Подключите Ozon API вверху страницы, чтобы загрузить остатки и продажи по кластерам.';
-        $('supplyList').innerHTML = '';
-        $('supplySummary')?.classList.add('hidden');
-        return;
-      }
-      if (isDemoCatalog() || !state.products.some((p) => p.product_id)) {
-        $('supplyHint').textContent = 'Загружаю ассортимент из Ozon API…';
-        await loadAssortment();
-      }
-      const products = state.products.filter((p) => p.product_id);
-      const productIds = products.map((p) => p.product_id).filter(Boolean);
-      if (!force && productIds.length) {
-        const cached = readSupplyCache(productIds);
-        if (cached?.items?.length) {
-          applySupplyCache(cached);
-          renderSupplySummary(state.supply.items);
-          renderSupplyList();
-          const age = supplyCacheAgeMinutes(cached.ts);
-          $('supplyHint').textContent =
-            'Из кэша (' + age + ' мин назад). «Обновить поставки» — свежие данные с Ozon.';
-          setSupplyStatus('', false);
-          return;
-        }
-      }
-      state.supply.loading = true;
-      const btn = $('btnSupplyLoad');
-      if (btn) btn.disabled = true;
-      setSupplyStatus('Загружаю остатки и таблицу наценок…', false);
-      try {
-        if (!products.length) {
-          throw new Error(
-            isDemoCatalog()
-              ? 'Подключите Ozon API (кнопка «Подключить») и дождитесь загрузки ассортимента'
-              : 'API не вернул товары с product_id — проверьте ключи и права Seller API'
-          );
-        }
-        const [, clusterInfo, stocksPack, fbo7] = await Promise.all([
-          loadSupplySurchargeTable(),
-          fetchOzonClusterMap(),
-          fetchSupplyStocksV3(productIds),
-          fetchFboOrders7d(),
-        ]);
-        const table = state.supply.surchargeTable;
-        const { idToName } = clusterInfo;
-        const { stocksByPid, stocksByOffer, skuByPid } = stocksPack;
-        state.supply.fboOrders7d = fbo7;
-        state.supply.surchargeExempt = state.supply.fboOrders7d > 0 && state.supply.fboOrders7d < 50;
-        const skuAliases = buildSkuAliasMap(products, skuByPid);
-        const ozonSkus = [];
-        products.forEach((p) => {
-          const pid = String(p.product_id || '');
-          const oz = skuByPid.get(pid) || p.ozon_sku;
-          if (oz) ozonSkus.push(String(oz));
-        });
-        if (!ozonSkus.length) {
-          throw new Error('Не найден Ozon SKU у товаров — обновите ассортимент и повторите');
-        }
-        const clusterCount = clusterIdsForAnalytics(idToName, table).length;
-        const gasCalls = Math.ceil(clusterCount / SUPPLY_GAS_BATCH);
-        setSupplyStatus(
-          'Продажи: ' + clusterCount + ' кластеров · ' + gasCalls + ' пакетных запросов к прокси…',
-          false
-        );
-        const salesMap = await fetchClusterSalesFromDeliveryTime(
-          ozonSkus,
-          idToName,
-          skuAliases,
-          (cur, tot) => setSupplyStatus('Кластеры: ' + cur + ' / ' + tot + ' · SKU ' + ozonSkus.length, false)
-        );
-        if (!state.supply.clusterSalesOk) {
-          throw new Error(
-            (state.supply.analyticsNote || 'Нет продаж по кластерам') +
-              '. Нужен доступ к разделу «Среднее время доставки» в Ozon Seller API.'
-          );
-        }
-        const items = products.map((p) => {
-          const pid = String(p.product_id || '');
-          const stockParsed = stocksByPid.get(pid) || stocksByOffer.get(p.offer_id) || { total: p.stock || 0, byCluster: new Map() };
-          const sku = skuByPid.get(pid) || pid || p.offer_id;
-          const item = buildSupplyItem({ ...p, sku }, salesMap, stockParsed, table, state.supply.surchargeExempt);
-          return item;
-        });
-        state.supply.items = items;
-        state.supply.loaded = true;
-        state.supply.error = '';
-        writeSupplyCache(productIds, {
-          items,
-          clusterSalesOk: state.supply.clusterSalesOk,
-          analyticsNote: state.supply.analyticsNote,
-          fboOrders7d: state.supply.fboOrders7d,
-          surchargeExempt: state.supply.surchargeExempt,
-        });
-        renderSupplySummary(items);
-        renderSupplyList();
-        $('supplyHint').textContent = 'Данные обновлены. Повторное открытие вкладки — из кэша до 30 мин.';
-        setSupplyStatus('', false);
-      } catch (e) {
-        state.supply.error = e?.message || String(e);
-        setSupplyStatus(state.supply.error, true);
-        console.error(e);
-      } finally {
-        state.supply.loading = false;
-        if (btn) btn.disabled = false;
-      }
-    }
-
     function initTabs() {
       document.querySelectorAll('.tab-btn').forEach((btn) => {
         btn.addEventListener('click', () => {
@@ -4319,9 +3355,6 @@
           document.querySelectorAll('.tab-panel').forEach((p) => p.classList.toggle('active', p.id === id));
           if (id === 'tab-analytics' && state.connected && !state.dashboard.loading && !state.dashboard.loaded) {
             loadDashboard().catch(() => {});
-          }
-          if (id === 'tab-supply') {
-            loadSupplyTab(false).catch(() => {});
           }
         });
       });
@@ -4421,11 +3454,6 @@
         state.assortSearch = e.target.value;
         renderAssortment();
       });
-      $('supplySearch')?.addEventListener('input', (e) => {
-        state.supply.search = e.target.value;
-        if (state.supply.loaded) renderSupplyList();
-      });
-      $('btnSupplyLoad')?.addEventListener('click', () => loadSupplyTab(true).catch(() => {}));
       $('fbsOrigin')?.addEventListener('change', () => {
         localStorage.setItem(LS_FBS_ORIGIN, $('fbsOrigin').value);
         applyLogisticsRecalc();
@@ -4456,9 +3484,12 @@
         recalc();
         loadCommissionTable().catch(() => {});
         loadLogisticsTable().catch(() => {});
-        await loadAssortment();
-        if (cid && key) await connect();
-        else schedule();
+        if (cid && key) {
+          await connect();
+        } else {
+          await loadAssortment();
+          schedule();
+        }
       } catch (e) {
         console.error(e);
         showAuthError('Ошибка запуска: ' + (e?.message || e));
