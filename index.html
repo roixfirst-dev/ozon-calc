@@ -357,7 +357,7 @@
           <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Поставки · FBO</h2>
-              <p class="mt-1 text-xs text-slate-500">Умная отгрузка по кластерам и радар обнуления остатков · 30 дней продаж · таблица наценок Ozon</p>
+              <p class="mt-1 text-xs text-slate-500">Продажи по кластерам — Ozon API · остатки FBO по кластерам · таблица наценок</p>
             </div>
             <button id="btnSupplyLoad" type="button" class="rounded-xl bg-ozon px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-ozon-dark disabled:opacity-50">Обновить поставки</button>
           </div>
@@ -450,6 +450,8 @@
         surchargeTable: null,
         clusterMap: new Map(),
         clusterLabels: [],
+        clusterIdToName: new Map(),
+        clusterSalesOk: false,
         fboOrders7d: 0,
         surchargeExempt: false,
         error: '',
@@ -1954,6 +1956,7 @@
         dimsLabel: productDimsLabel(dimSrc),
         weight: weightG,
         product_id: item.product_id,
+        ozon_sku: String(item.sku || item.sources?.[0]?.sku || item.fbo_sku || ''),
         categoryId,
         typeId,
         categoryName,
@@ -2358,19 +2361,17 @@
           return;
         }
         setStatus(true);
-        btn.disabled = false;
-        btn.textContent = btnLabel;
         state.dataLoading = true;
         $('assortHint').textContent = 'Загружаю каталог и таблицу комиссий…';
-        loadAllData()
-          .catch((err) => {
-            showAuthError(err?.message || String(err));
-          })
-          .finally(() => {
-            state.dataLoading = false;
-            btn.disabled = false;
-            btn.textContent = btnLabel;
-          });
+        try {
+          await loadAllData();
+        } catch (err) {
+          showAuthError(err?.message || String(err));
+        } finally {
+          state.dataLoading = false;
+          btn.disabled = false;
+          btn.textContent = btnLabel;
+        }
         return;
       } catch (e) {
         setStatus(false);
@@ -3359,33 +3360,37 @@
 
     async function fetchOzonClusterMap() {
       const map = new Map();
+      const idToName = new Map();
       const labels = [];
       let res = await apiPost('/v1/cluster/list', { cluster_type: 'CLUSTER_TYPE_OZON' });
       if (!res.ok) res = await apiPost('/v1/cluster/list', {});
       const clusters = res.data?.clusters || res.data?.result?.clusters || [];
       (clusters || []).forEach((cl) => {
+        const cid = String(cl.id ?? cl.cluster_id ?? '');
         const name = cl.name || cl.cluster_name || cl.title || '';
         const key = resolveClusterName(name, state.supply.surchargeTable);
         if (!key) return;
+        if (cid) idToName.set(cid, name);
         labels.push(name);
         (cl.logistic_clusters || cl.warehouses || []).forEach((w) => {
           const wid = String(w.warehouse_id || w.id || '');
           const wname = w.name || w.warehouse_name || '';
-          if (wid) map.set(wid, { key, name });
-          if (wname) map.set(normCluster(wname), { key, name });
+          if (wid) map.set(wid, { key, name, id: cid });
+          if (wname) map.set(normCluster(wname), { key, name, id: cid });
         });
-        map.set(key, { key, name });
+        map.set(key, { key, name, id: cid });
       });
       if (!labels.length && state.logisticsTables?.FBO?.origins?.length) {
         state.logisticsTables.FBO.origins.forEach((o) => {
           const key = normCluster(o);
           labels.push(o);
-          map.set(key, { key, name: o });
+          map.set(key, { key, name: o, id: '' });
         });
       }
       state.supply.clusterMap = map;
+      state.supply.clusterIdToName = idToName;
       state.supply.clusterLabels = [...new Set(labels)];
-      return map;
+      return { map, idToName };
     }
 
     async function fetchFboOrders7d() {
@@ -3413,80 +3418,90 @@
       return units;
     }
 
-    async function fetchAnalyticsSkuCluster(skuKeys, dateFrom, dateTo) {
+    function isDemoCatalog(products) {
+      const list = products || state.products || [];
+      if (!list.length) return true;
+      return list.every((p) => DEMO_PRODUCTS.some((d) => d.offer_id === p.offer_id));
+    }
+
+    function cloneClusterSalesMap(src) {
+      const out = new Map();
+      (src || new Map()).forEach((v, k) => {
+        const byOrigin = new Map();
+        (v.byOrigin || new Map()).forEach((cnt, ok) => byOrigin.set(ok, cnt));
+        out.set(k, { units: v.units || 0, revenue: v.revenue || 0, byOrigin });
+      });
+      return out;
+    }
+
+    function publishSkuSales(sales, sku, skuMap, skuAliases) {
+      const keys = skuAliases?.get(String(sku)) || [String(sku)];
+      const cloned = cloneClusterSalesMap(skuMap);
+      keys.forEach((alias) => sales.set(alias, cloneClusterSalesMap(cloned)));
+    }
+
+    /** Продажи по кластерам — Ozon «Среднее время доставки» (не /v1/analytics/data: там нет cluster). */
+    async function fetchClusterSalesFromDeliveryTime(ozonSkuList, idToName, skuAliases, onProgress) {
       const sales = new Map();
-      const dimSets = [
-        ['sku', 'cluster'],
-        ['sku', 'warehouse'],
-        ['cluster', 'sku'],
-        ['sku'],
-      ];
-      let usedDims = null;
+      const skus = [...new Set(ozonSkuList.map(String).filter(Boolean))];
+      let okSkus = 0;
       let lastErr = '';
-      for (const dimensions of dimSets) {
-        sales.clear();
-        let failed = false;
-        for (let i = 0; i < skuKeys.length; i += 80) {
-          const chunk = skuKeys.slice(i, i + 80);
-          const filters = chunk.length === 1
-            ? [{ key: 'sku', op: 'EQ', value: String(chunk[0]) }]
-            : [{ key: 'skus', op: 'IN', value: chunk.map(String) }];
-          let offset = 0;
-          for (let page = 0; page < 20; page++) {
-            const res = await apiPost('/v1/analytics/data', {
-              date_from: dateFrom,
-              date_to: dateTo,
-              metrics: ['ordered_units', 'revenue'],
-              dimension: dimensions,
-              filters,
-              sort: [{ key: dimensions[0], order: 'ASC' }],
-              limit: 1000,
-              offset,
-            });
-            if (!res.ok) {
-              failed = true;
-              lastErr = state.lastApiError;
-              break;
-            }
-            const data = res.data?.result?.data || res.data?.data || [];
-            if (!data.length) break;
-            data.forEach((row) => {
-              const dims = row.dimensions || [];
-              let sku = '';
-              let clusterRaw = '';
-              dims.forEach((d, idx) => {
-                const id = String(d.id || d.name || '').trim();
-                const name = String(d.name || d.id || '').trim();
-                const dimKey = normalizeText(dimensions[idx] || '');
-                if (dimKey.includes('sku') || dimKey.includes('spu')) sku = id || name;
-                else clusterRaw = name || id;
-              });
-              if (!sku && dims[0]) sku = String(dims[0].id || dims[0].name || '');
-              if (dimensions.length === 1) clusterRaw = 'все кластеры';
-              const units = Number(row.metrics?.[0]) || 0;
-              const revenue = Number(row.metrics?.[1]) || 0;
-              if (!sku) return;
-              const cluster = resolveClusterName(clusterRaw || 'неизвестно', state.supply.surchargeTable);
-              if (!sales.has(sku)) sales.set(sku, new Map());
-              const m = sales.get(sku);
-              m.set(cluster, {
-                units: (m.get(cluster)?.units || 0) + units,
-                revenue: (m.get(cluster)?.revenue || 0) + revenue,
-              });
-            });
-            if (data.length < 1000) break;
-            offset += 1000;
-          }
-          if (failed) break;
+
+      for (let i = 0; i < skus.length; i++) {
+        const sku = skus[i];
+        if (onProgress) onProgress(i + 1, skus.length);
+        const res = await apiPost('/v1/analytics/average-delivery-time', {
+          delivery_schema: 'FBO',
+          supply_period: 'FOUR_WEEKS',
+          sku: [sku],
+        });
+        if (!res.ok) {
+          lastErr = state.lastApiError;
+          continue;
         }
-        if (!failed && sales.size) {
-          usedDims = dimensions;
-          break;
+        const rows = res.data?.data || res.data?.result?.data || [];
+        if (!rows.length) continue;
+
+        const skuMap = new Map();
+        rows.forEach((row) => {
+          const destId = String(row.delivery_cluster_id ?? '');
+          const destName = idToName.get(destId) || destId;
+          const destKey = resolveClusterName(destName, state.supply.surchargeTable);
+          if (!destKey) return;
+
+          const byOrigin = new Map();
+          let sumOrigins = 0;
+          (row.clusters_data || []).forEach((orig) => {
+            const oid = String(orig.cluster_id ?? '');
+            const oName = idToName.get(oid) || oid;
+            const oKey = resolveClusterName(oName, state.supply.surchargeTable);
+            const oc = Number(orig.orders_count) || 0;
+            if (!oKey || oc <= 0) return;
+            byOrigin.set(oKey, (byOrigin.get(oKey) || 0) + oc);
+            sumOrigins += oc;
+          });
+          const units = Number(row.metrics?.orders_count?.total) || sumOrigins;
+          if (units <= 0) return;
+
+          const prev = skuMap.get(destKey) || { units: 0, revenue: 0, byOrigin: new Map() };
+          prev.units += units;
+          byOrigin.forEach((cnt, oKey) => {
+            prev.byOrigin.set(oKey, (prev.byOrigin.get(oKey) || 0) + cnt);
+          });
+          skuMap.set(destKey, prev);
+        });
+
+        if (skuMap.size) {
+          okSkus++;
+          publishSkuSales(sales, sku, skuMap, skuAliases);
         }
+        if (i > 0 && i % 8 === 0) await new Promise((r) => setTimeout(r, 120));
       }
-      state.supply.analyticsNote = usedDims
-        ? 'Аналитика: ' + usedDims.join(' × ')
-        : (lastErr ? 'Аналитика по кластерам недоступна: ' + lastErr : '');
+
+      state.supply.clusterSalesOk = okSkus > 0;
+      state.supply.analyticsNote = state.supply.clusterSalesOk
+        ? 'Продажи по кластерам: Ozon «Среднее время доставки», FBO, 4 нед. · SKU ' + okSkus + '/' + skus.length
+        : lastErr || 'Ozon не вернул продажи по кластерам (average-delivery-time)';
       return sales;
     }
 
@@ -3496,9 +3511,13 @@
       const stocks = row.stocks || row.items || [];
       const list = Array.isArray(stocks) ? stocks : (stocks.stocks || []);
       (list || []).forEach((s) => {
+        const type = String(s.type || s.source || '').toLowerCase();
+        if (type && (type.includes('fbs') || type.includes('rfbs')) && !type.includes('fbo')) return;
         const qty = Number(s.present ?? s.available ?? s.stock ?? s.quantity ?? 0) || 0;
         if (qty <= 0) return;
-        const wh = String(s.warehouse_id || s.warehouse_name || s.warehouse || s.type || '');
+        const wh = String(
+          s.warehouse_id || s.warehouse_name || s.warehouse || s.cluster_name || s.cluster || s.type || ''
+        );
         const mapped = clusterMap.get(wh) || clusterMap.get(normCluster(wh)) || clusterMap.get(normCluster(s.warehouse_name || ''));
         const key = mapped?.key || resolveClusterName(s.cluster_name || s.warehouse_name || wh, state.supply.surchargeTable);
         if (!key) return;
@@ -3528,17 +3547,19 @@
           let res = await apiPost('/v3/product/info/stocks', body);
           if (!res.ok) res = await apiPost('/v4/product/info/stocks', body);
           if (!res.ok) break;
-          const items = res.data?.items || res.data?.result?.items || [];
-          items.forEach((row) => {
-            const pid = String(row.product_id || '');
+          const items = res.data?.items || res.data?.result?.items || res.data?.result || [];
+          const rows = Array.isArray(items) ? items : [];
+          rows.forEach((row) => {
+            const pid = String(row.product_id || row.id || '');
             const offer = String(row.offer_id || '');
             const parsed = parseStocksByCluster(row, state.supply.clusterMap);
-            if (row.sku) skuByPid.set(pid, String(row.sku));
+            const skuVal = row.sku || row.fbo_sku || (row.stocks?.[0]?.sku);
+            if (skuVal) skuByPid.set(pid, String(skuVal));
             if (pid) stocksByPid.set(pid, parsed);
             if (offer) stocksByOffer.set(offer, parsed);
           });
-          lastId = res.data?.last_id || res.data?.result?.last_id || '';
-          if (!lastId || !items.length) break;
+          lastId = res.data?.last_id || res.data?.result?.last_id || res.data?.cursor || '';
+          if (!lastId || !rows.length) break;
         }
       }
       return { stocksByPid, stocksByOffer, skuByPid };
@@ -3577,11 +3598,20 @@
         totalStock += stockByCluster.get(c) || 0;
       });
       clusters.forEach((destKey) => {
-        const sold = salesByCluster.get(destKey)?.units ?? salesByCluster.get(destKey) ?? 0;
+        const sale = salesByCluster.get(destKey);
+        const sold = sale?.units ?? (typeof sale === 'number' ? sale : 0);
         const stock = stockByCluster.get(destKey) || 0;
         totalSold += sold;
-        const crossEst = estimateCrossUnitsAtDest(sold, destKey, stockByCluster);
-        const localEst = Math.max(0, sold - crossEst);
+        let crossEst = 0;
+        let localEst = 0;
+        if (sale?.byOrigin && sale.byOrigin.size) {
+          sale.byOrigin.forEach((cnt, originKey) => {
+            if (originKey === destKey) localEst += cnt;
+            else crossEst += cnt;
+          });
+        } else {
+          localEst = sold;
+        }
         totalCross += crossEst;
         const daily = sold / SUPPLY_DAYS;
         const daysLeftCluster = daily > 0 ? stock / daily : stock > 0 ? 999 : 0;
@@ -3622,11 +3652,20 @@
       salesByCluster.forEach((sale, destKey) => {
         const orders = sale.units || sale || 0;
         if (orders <= 0) return;
-        stockByCluster.forEach((stockQty, originKey) => {
-          const share = stockQty / totalStock;
-          const pct = surchargePct(table, originKey, destKey);
-          cost += orders * share * (price * (pct / 100));
-        });
+        if (sale?.byOrigin && sale.byOrigin.size) {
+          sale.byOrigin.forEach((cnt, originKey) => {
+            if (originKey === destKey) return;
+            const pct = surchargePct(table, originKey, destKey);
+            cost += cnt * (price * (pct / 100));
+          });
+        } else {
+          stockByCluster.forEach((stockQty, originKey) => {
+            if (originKey === destKey) return;
+            const share = totalStock > 0 ? stockQty / totalStock : 0;
+            const pct = surchargePct(table, originKey, destKey);
+            cost += orders * share * (price * (pct / 100));
+          });
+        }
       });
       return cost;
     }
@@ -3699,6 +3738,18 @@
       return { plan, savingsPct, salesObj, stockObj, before, after, breakdown };
     }
 
+    function buildSkuAliasMap(products, skuByPid) {
+      const map = new Map();
+      products.forEach((p) => {
+        const pid = String(p.product_id || '');
+        const offer = String(p.offer_id || '');
+        const ozonSku = String(skuByPid.get(pid) || p.ozon_sku || '').trim();
+        const group = [...new Set([ozonSku, pid, offer].filter((x) => x && x !== 'undefined' && x !== '0'))];
+        group.forEach((k) => map.set(k, group));
+      });
+      return map;
+    }
+
     function salesMapForProduct(salesMap, product, sku) {
       const keys = [String(sku || ''), String(product.product_id || ''), String(product.offer_id || '')].filter(Boolean);
       for (let i = 0; i < keys.length; i++) {
@@ -3708,7 +3759,7 @@
     }
 
     function buildSupplyItem(product, salesMap, stockParsed, table, exempt) {
-      const sku = String(product.sku || product.product_id || product.offer_id || '');
+      const sku = String(product.ozon_sku || product.sku || product.product_id || product.offer_id || '');
       const salesByCluster = salesMapForProduct(salesMap, product, sku);
       const stockByCluster = stockParsed?.byCluster || new Map();
       const totalStock = stockParsed?.total ?? product.stock ?? 0;
@@ -3756,7 +3807,7 @@
     function renderClusterBreakdownHtml(it) {
       const rows = (it.clusterRows || []).filter((r) => r.sold > 0 || r.stock > 0);
       if (!rows.length) {
-        return '<p class="mt-2 text-xs text-slate-400">Нет разбивки по кластерам (проверьте аналитику API).</p>';
+        return '<p class="mt-2 text-xs text-slate-400">Нет продаж по кластерам за 30 дн. — проверьте подключение API или дождитесь первых заказов.</p>';
       }
       const head =
         '<thead><tr class="text-left text-[10px] uppercase text-slate-400">' +
@@ -4000,29 +4051,46 @@
       try {
         await loadSupplySurchargeTable();
         const table = state.supply.surchargeTable;
-        await fetchOzonClusterMap();
+        const { idToName } = await fetchOzonClusterMap();
         state.supply.fboOrders7d = await fetchFboOrders7d();
         state.supply.surchargeExempt = state.supply.fboOrders7d > 0 && state.supply.fboOrders7d < 50;
-        const products = state.products.length ? state.products : [];
-        if (!products.length) {
-          throw new Error('Сначала загрузите ассортимент (вкладка «Мой ассортимент») или подключите API');
+        if (isDemoCatalog() || !state.products.some((p) => p.product_id)) {
+          $('supplyHint').textContent = 'Загружаю ассортимент из Ozon API…';
+          await loadAssortment();
         }
-        const to = new Date();
-        const from = new Date();
-        from.setDate(from.getDate() - (SUPPLY_DAYS - 1));
-        const dateFrom = formatYmdLocal(from);
-        const dateTo = formatYmdLocal(to);
+        const products = state.products.filter((p) => p.product_id);
+        if (!products.length) {
+          throw new Error(
+            isDemoCatalog()
+              ? 'Подключите Ozon API (кнопка «Подключить») и дождитесь загрузки ассортимента'
+              : 'API не вернул товары с product_id — проверьте ключи и права Seller API'
+          );
+        }
         const productIds = products.map((p) => p.product_id).filter(Boolean);
         const { stocksByPid, stocksByOffer, skuByPid } = await fetchSupplyStocksV3(productIds);
-        const skuKeys = [];
+        const skuAliases = buildSkuAliasMap(products, skuByPid);
+        const ozonSkus = [];
         products.forEach((p) => {
           const pid = String(p.product_id || '');
-          const sku = skuByPid.get(pid);
-          if (sku) skuKeys.push(sku);
-          if (pid) skuKeys.push(pid);
-          if (p.offer_id) skuKeys.push(String(p.offer_id));
+          const oz = skuByPid.get(pid) || p.ozon_sku;
+          if (oz) ozonSkus.push(String(oz));
         });
-        const salesMap = await fetchAnalyticsSkuCluster([...new Set(skuKeys)], dateFrom, dateTo);
+        if (!ozonSkus.length) {
+          throw new Error('Не найден Ozon SKU у товаров — обновите ассортимент и повторите');
+        }
+        setSupplyStatus('Загружаю продажи по кластерам из Ozon (это может занять минуту)…', false);
+        const salesMap = await fetchClusterSalesFromDeliveryTime(
+          ozonSkus,
+          idToName,
+          skuAliases,
+          (cur, tot) => setSupplyStatus('Продажи по кластерам: ' + cur + ' / ' + tot + ' SKU…', false)
+        );
+        if (!state.supply.clusterSalesOk) {
+          throw new Error(
+            (state.supply.analyticsNote || 'Нет продаж по кластерам') +
+              '. Нужен доступ к разделу «Среднее время доставки» в Ozon Seller API.'
+          );
+        }
         const items = products.map((p) => {
           const pid = String(p.product_id || '');
           const stockParsed = stocksByPid.get(pid) || stocksByOffer.get(p.offer_id) || { total: p.stock || 0, byCluster: new Map() };
