@@ -2666,7 +2666,8 @@
         from.setDate(from.getDate() - 29);
       } else if (preset === 'month') {
         from = new Date(now.getFullYear(), now.getMonth(), 1);
-        to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        to = endOfMonth > now ? new Date(now) : endOfMonth;
       } else if (preset === 'prevMonth') {
         from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
         to = new Date(now.getFullYear(), now.getMonth(), 0);
@@ -2716,9 +2717,11 @@
       return mergeFinanceTotals(parts);
     }
     async function fetchAnalyticsRange(from, to) {
+      const todayYmd = formatYmdLocal(new Date());
+      const dateTo = to > todayYmd ? todayYmd : to;
       const res = await apiPost('/v1/analytics/data', {
         date_from: from,
-        date_to: to,
+        date_to: dateTo,
         metrics: ['revenue', 'ordered_units'],
         dimension: ['day'],
         filters: [],
@@ -2726,7 +2729,10 @@
         limit: 1000,
         offset: 0,
       });
-      if (!res.ok) return { rows: [], revenue: 0, units: 0 };
+      if (!res.ok) {
+        const err = res.data?.message || res.error || state.lastApiError || ('HTTP ' + (res.status || ''));
+        return { rows: [], revenue: 0, units: 0, error: String(err || 'Ошибка /v1/analytics/data') };
+      }
       const data = res.data?.result?.data || res.data?.data || [];
       let revenue = 0;
       let units = 0;
@@ -3006,6 +3012,22 @@
 
       const rows = cur.analytics?.rows || [];
       const dailyEl = $('dashChartDaily');
+      if (dailyEl && !rows.length) {
+        const wrap = dailyEl.parentElement;
+        let hint = wrap?.querySelector('.dash-chart-empty');
+        if (!hint && wrap) {
+          hint = document.createElement('p');
+          hint.className = 'dash-chart-empty';
+          wrap.appendChild(hint);
+        }
+        if (hint) {
+          hint.textContent = cur.analytics?.error
+            ? 'Нет данных: ' + cur.analytics.error
+            : 'Нет данных за период (проверьте права API «Аналитика» или подождите 1 мин между обновлениями)';
+        }
+      } else if (dailyEl?.parentElement) {
+        dailyEl.parentElement.querySelector('.dash-chart-empty')?.remove();
+      }
       if (dailyEl && rows.length) {
         charts.daily = new Chart(dailyEl, {
           type: 'bar',
@@ -3232,7 +3254,8 @@
       const el = $('dashAnalytics');
       if (!el) return;
       if (!rows?.length) {
-        el.innerHTML = '<p class="text-slate-400">Нет данных аналитики (проверьте права API)</p>';
+        const err = state.dashboard.data?.current?.analytics?.error;
+        el.innerHTML = '<p class="text-slate-400">' + (err ? ('Аналитика Ozon: ' + escapeHtml(err)) : 'Нет данных аналитики (проверьте права API «Аналитика» или лимит 1 запрос/мин)') + '</p>';
         return;
       }
       let html = '<table class="w-full min-w-[320px] text-left"><thead><tr class="border-b text-xs text-slate-500"><th class="py-2 pr-3">День</th><th class="py-2 pr-3">Выручка</th><th class="py-2">Заказы</th></tr></thead><tbody>';
@@ -3304,14 +3327,14 @@
       dashSetStatus('Загрузка: финансы, аналитика, отчёт…', false);
       try {
         const prev = dashPrevPeriod(from, to);
-        const [totals, prevTotals, analytics, prevAnalytics, cashFlow, opBreakdown] = await Promise.all([
+        const [totals, prevTotals, cashFlow, opBreakdown] = await Promise.all([
           fetchFinanceTotalsRange(from, to),
           fetchFinanceTotalsRange(prev.from, prev.to),
-          fetchAnalyticsRange(from, to),
-          fetchAnalyticsRange(prev.from, prev.to),
           fetchCashFlowRange(from, to),
           dashPeriodDays(from, to) <= 31 ? fetchOpTypeBreakdown(from, to) : Promise.resolve({ opTypes: [], services: [] }),
         ]);
+        const analytics = await fetchAnalyticsRange(from, to);
+        const prevAnalytics = { rows: [], revenue: 0, units: 0 };
         const financeServices = cashFlow.services?.length ? cashFlow.services : (opBreakdown.services || []);
         const serviceSource = cashFlow.services?.length ? 'cashflow' : (opBreakdown.services?.length ? 'transactions' : 'totals');
         const payload = {
