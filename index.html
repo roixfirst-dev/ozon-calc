@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
   <title>FinSeller — карманный финансовый директор для продавца</title>
-  <link rel="icon" href="finseller-icon2.png" type="image/png" />
+  <link rel="icon" href="finseller-icon2.png" type="image/png" sizes="32x32" />
+  <link rel="apple-touch-icon" href="assets/finseller-icon.png" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -19,6 +20,11 @@
     summary::-webkit-details-marker { display: none; }
     details[open] .chevron { transform: rotate(180deg); }
     .chevron { transition: transform 0.2s ease; }
+    .app-icon {
+      object-fit: contain;
+      background: transparent;
+      box-shadow: 0 4px 16px rgba(34, 211, 238, 0.22), 0 2px 8px rgba(139, 92, 246, 0.15);
+    }
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
     .tab-btn.active { background: #005bff; color: #fff; border-color: #005bff; }
@@ -194,7 +200,7 @@
   <header class="w-full border-b border-white/80 bg-white/90 shadow-sm backdrop-blur-md">
     <div class="flex w-full min-w-0 flex-wrap items-center justify-between gap-3 px-3 py-3 sm:px-4 sm:py-4">
       <div class="flex items-center gap-3">
-        <img src="finseller-icon2.png" alt="FinSeller" width="44" height="44" class="h-11 w-11 shrink-0 rounded-2xl object-cover shadow-lg ring-1 ring-slate-200/80" />
+        <img src="finseller-icon2.png" alt="FinSeller" width="48" height="48" class="app-icon h-12 w-12 shrink-0 rounded-xl" />
         <div class="min-w-0">
           <h1 class="text-base font-bold leading-tight text-slate-900 sm:text-lg">FinSeller — карманный финансовый директор для продавца</h1>
           <p class="text-xs text-slate-500">Ozon · юнит-экономика · ассортимент · сводка ЛК</p>
@@ -494,12 +500,12 @@
         <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center">
           <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Тариф</p>
           <p class="mt-1 text-lg font-bold text-slate-900">1 неделя</p>
-          <p class="mt-1 text-2xl font-bold text-ozon">700 ₽</p>
+          <p class="mt-1 text-2xl font-bold text-ozon">500 ₽</p>
         </div>
         <div class="rounded-2xl border-2 border-ozon/30 bg-blue-50/60 p-4 text-center">
           <p class="text-xs font-semibold uppercase tracking-wide text-ozon">Выгоднее</p>
           <p class="mt-1 text-lg font-bold text-slate-900">1 месяц</p>
-          <p class="mt-1 text-2xl font-bold text-ozon">1 799 ₽</p>
+          <p class="mt-1 text-2xl font-bold text-ozon">1 200 ₽</p>
         </div>
       </div>
       <button id="btnPaywallRenew" type="button" class="w-full rounded-xl bg-ozon px-5 py-3.5 text-sm font-semibold text-white shadow-lg hover:bg-ozon-dark">
