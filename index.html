@@ -4,30 +4,242 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
   <title>FinSeller — карманный финансовый директор для продавца</title>
-  <link rel="icon" href="finseller-icon2.png" type="image/png" sizes="32x32" />
-  <link rel="apple-touch-icon" href="assets/finseller-icon.png" />
+  <link rel="icon" href="finseller-logo2.png" type="image/png" sizes="32x32" />
+  <link rel="apple-touch-icon" href="finseller-logo2.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script>
-    tailwind.config = { theme: { extend: { colors: { ozon: '#005bff', 'ozon-dark': '#0047cc' } } } };
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ozon: '#7c3aed',
+            'ozon-dark': '#6d28d9',
+            brand: { cyan: '#22d3ee', violet: '#8b5cf6', pink: '#ec4899' },
+          },
+          fontFamily: { sans: ['Manrope', 'system-ui', 'sans-serif'] },
+        },
+      },
+    };
   </script>
   <style>
-    input[type="range"] { accent-color: #005bff; }
+    :root {
+      --fs-violet: #8b5cf6;
+      --fs-violet-dark: #6d28d9;
+      --fs-pink: #ec4899;
+      --fs-cyan: #22d3ee;
+      --fs-ink: #0f172a;
+      --fs-muted: #64748b;
+      --fs-glass: rgba(255, 255, 255, 0.72);
+      --fs-glass-border: rgba(255, 255, 255, 0.9);
+      --fs-gradient: linear-gradient(135deg, var(--fs-violet) 0%, var(--fs-pink) 55%, var(--fs-cyan) 100%);
+      --fs-shadow: 0 20px 50px rgba(139, 92, 246, 0.12), 0 8px 24px rgba(15, 23, 42, 0.06);
+    }
+    html, body {
+      width: 100%;
+      max-width: 100%;
+      margin: 0;
+      overflow-x: hidden;
+      -webkit-text-size-adjust: 100%;
+      font-family: 'Manrope', system-ui, sans-serif;
+    }
+    body {
+      min-height: 100vh;
+      min-height: 100dvh;
+      color: var(--fs-ink);
+      background: #f1f5f9;
+    }
+    body::before,
+    body::after {
+      content: '';
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(90px);
+      opacity: 0.35;
+      pointer-events: none;
+      z-index: 0;
+      animation: fsMesh 20s ease-in-out infinite alternate;
+    }
+    body::before {
+      width: min(70vw, 420px);
+      height: min(70vw, 420px);
+      top: -12%;
+      right: -8%;
+      background: radial-gradient(circle, rgba(236, 72, 153, 0.55), transparent 70%);
+    }
+    body::after {
+      width: min(65vw, 380px);
+      height: min(65vw, 380px);
+      bottom: 8%;
+      left: -12%;
+      background: radial-gradient(circle, rgba(34, 211, 238, 0.45), transparent 70%);
+      animation-delay: -8s;
+    }
+    @keyframes fsMesh {
+      from { transform: translate(0, 0) scale(1); }
+      to { transform: translate(-3%, 5%) scale(1.06); }
+    }
+    .app-root { position: relative; z-index: 1; width: 100%; max-width: 100%; min-width: 0; overflow-x: hidden; }
+    @media (min-width: 1280px) {
+      .app-root header > div,
+      .app-root > main { max-width: 80rem; margin-left: auto; margin-right: auto; }
+    }
+
+    input[type="range"] { accent-color: var(--fs-violet); }
     .metric { transition: color 0.3s ease, transform 0.2s ease; }
-    .metric.flash { transform: scale(1.02); }
+    .metric.flash { transform: scale(1.04); }
     summary::-webkit-details-marker { display: none; }
     details[open] .chevron { transform: rotate(180deg); }
     .chevron { transition: transform 0.2s ease; }
-    .app-icon {
-      object-fit: contain;
-      background: transparent;
-      box-shadow: 0 4px 16px rgba(34, 211, 238, 0.22), 0 2px 8px rgba(139, 92, 246, 0.15);
+
+    .fs-header {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.65);
+      background: var(--fs-glass);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      box-shadow: 0 4px 30px rgba(139, 92, 246, 0.08);
     }
+    .logo-wrap {
+      position: relative;
+      flex-shrink: 0;
+    }
+    .logo-wrap::before {
+      content: '';
+      position: absolute;
+      inset: -6px;
+      border-radius: 1.25rem;
+      background: var(--fs-gradient);
+      opacity: 0.45;
+      filter: blur(12px);
+      animation: logoPulse 3s ease-in-out infinite;
+    }
+    @keyframes logoPulse {
+      0%, 100% { opacity: 0.35; transform: scale(0.95); }
+      50% { opacity: 0.65; transform: scale(1.05); }
+    }
+    .app-icon {
+      position: relative;
+      z-index: 1;
+      width: 3.25rem;
+      height: 3.25rem;
+      object-fit: contain;
+      border-radius: 1rem;
+      background: #0f172a;
+      box-shadow: 0 8px 28px rgba(34, 211, 238, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.12);
+      animation: logoFloat 5s ease-in-out infinite;
+    }
+    @keyframes logoFloat {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-3px); }
+    }
+    .brand-title {
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      background: linear-gradient(120deg, #1e1b4b, var(--fs-violet), var(--fs-pink));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .brand-sub { color: var(--fs-muted); }
+
+    .fs-panel {
+      border-radius: 1.25rem;
+      border: 1px solid var(--fs-glass-border);
+      background: var(--fs-glass);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      box-shadow: var(--fs-shadow);
+      animation: panelIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+    @keyframes panelIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .fs-panel-title {
+      font-size: 0.6875rem;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      background: linear-gradient(90deg, var(--fs-violet), var(--fs-pink));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
     .tab-panel { display: none; }
-    .tab-panel.active { display: block; }
-    .tab-btn.active { background: #005bff; color: #fff; border-color: #005bff; }
+    .tab-panel.active { display: block; animation: panelIn 0.4s ease both; }
+    .tab-btn {
+      transition: transform 0.2s, box-shadow 0.2s, background 0.2s, border-color 0.2s, color 0.2s;
+    }
+    .tab-btn:hover:not(.active) {
+      border-color: rgba(139, 92, 246, 0.35);
+      box-shadow: 0 4px 16px rgba(139, 92, 246, 0.1);
+    }
+    .tab-btn.active {
+      background: var(--fs-gradient) !important;
+      color: #fff !important;
+      border-color: transparent !important;
+      box-shadow: 0 8px 24px rgba(139, 92, 246, 0.35);
+    }
+    .scheme-btn.border-ozon.bg-ozon,
+    .row-scheme-btn.border-ozon.bg-ozon {
+      background: var(--fs-gradient) !important;
+      border-color: transparent !important;
+      box-shadow: 0 4px 14px rgba(139, 92, 246, 0.3);
+    }
+    #btnConnect,
+    #btnDashLoad,
+    #btnPaywallRenew {
+      background: var(--fs-gradient) !important;
+      border: none;
+      box-shadow: 0 8px 24px rgba(139, 92, 246, 0.35);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    #btnConnect:hover,
+    #btnDashLoad:hover,
+    #btnPaywallRenew:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 32px rgba(236, 72, 153, 0.35);
+    }
+    .dash-preset--active {
+      background: var(--fs-gradient) !important;
+      color: #fff !important;
+      border-color: transparent !important;
+    }
+
+    #statusBadge.status--on {
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(34, 211, 238, 0.12));
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      color: #047857;
+    }
+    #statusBadge.status--on span:first-child {
+      background: #10b981;
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.8);
+    }
+
+    .fs-trust {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+    }
+    .fs-trust span {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(139, 92, 246, 0.2);
+      color: #5b21b6;
+    }
+
     .dash-charts-panel {
       background: linear-gradient(160deg, #1a1f27 0%, #12151a 55%, #0f1115 100%);
       border: 1px solid rgba(255, 255, 255, 0.06);
@@ -44,35 +256,10 @@
     .dash-chart-wrap { position: relative; height: 260px; width: 100%; }
     @media (min-width: 1024px) { .dash-chart-wrap--tall { height: 300px; } }
     .dash-chart-empty { color: #64748b; font-size: 0.8125rem; text-align: center; padding: 2.5rem 1rem; }
-    .cat-option:hover, .cat-option.focus { background: #e8f1ff; }
-    .cat-option[aria-selected="true"] { background: #005bff; color: #fff; }
+    .cat-option:hover, .cat-option.focus { background: rgba(139, 92, 246, 0.12); }
+    .cat-option[aria-selected="true"] { background: var(--fs-violet); color: #fff; }
     body.paywall-locked main,
-    body.paywall-locked header { filter: blur(4px); pointer-events: none; user-select: none; }
-    html, body {
-      width: 100%;
-      max-width: 100%;
-      margin: 0;
-      overflow-x: hidden;
-      -webkit-text-size-adjust: 100%;
-    }
-    body {
-      min-height: 100vh;
-      min-height: 100dvh;
-    }
-    .app-root {
-      width: 100%;
-      max-width: 100%;
-      min-width: 0;
-      overflow-x: hidden;
-    }
-    @media (min-width: 1280px) {
-      .app-root header > div,
-      .app-root > main {
-        max-width: 80rem;
-        margin-left: auto;
-        margin-right: auto;
-      }
-    }
+    body.paywall-locked header { filter: blur(6px); pointer-events: none; user-select: none; }
     .global-loader {
       position: fixed;
       inset: 0;
@@ -101,7 +288,7 @@
       background: linear-gradient(165deg, #ffffff 0%, #f8fafc 100%);
       padding: 1.75rem 1.5rem 1.5rem;
       text-align: center;
-      box-shadow: 0 24px 60px rgba(0, 91, 255, 0.18), 0 8px 24px rgba(15, 23, 42, 0.12);
+      box-shadow: 0 24px 60px rgba(139, 92, 246, 0.22), 0 8px 24px rgba(15, 23, 42, 0.12);
       animation: loaderCardIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
     }
     @keyframes loaderCardIn {
@@ -110,48 +297,40 @@
     }
     .global-loader__visual {
       position: relative;
-      width: 4.5rem;
-      height: 4.5rem;
+      width: 5rem;
+      height: 5rem;
       margin: 0 auto 1.25rem;
+    }
+    .global-loader__visual::before {
+      content: '';
+      position: absolute;
+      inset: -8px;
+      border-radius: 1.25rem;
+      background: var(--fs-gradient);
+      opacity: 0.5;
+      filter: blur(14px);
+      animation: logoPulse 2s ease-in-out infinite;
+    }
+    .global-loader__logo {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      border-radius: 1rem;
+      animation: logoFloat 2.5s ease-in-out infinite;
     }
     .global-loader__ring {
       position: absolute;
-      inset: 0;
-      border-radius: 50%;
-      border: 3px solid transparent;
-      animation: loaderSpin 1.1s cubic-bezier(0.55, 0.1, 0.35, 0.9) infinite;
-    }
-    .global-loader__ring:nth-child(1) {
-      border-top-color: #005bff;
-      border-right-color: rgba(0, 91, 255, 0.25);
-      animation-duration: 0.95s;
-    }
-    .global-loader__ring:nth-child(2) {
-      inset: 0.45rem;
-      border-bottom-color: #38bdf8;
-      border-left-color: rgba(56, 189, 248, 0.2);
-      animation-duration: 1.25s;
-      animation-direction: reverse;
-    }
-    .global-loader__ring:nth-child(3) {
-      inset: 0.9rem;
-      border-top-color: #818cf8;
-      animation-duration: 0.75s;
-    }
-    .global-loader__core {
-      position: absolute;
-      inset: 1.35rem;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #005bff, #38bdf8);
-      box-shadow: 0 0 24px rgba(0, 91, 255, 0.45);
-      animation: loaderPulse 1.4s ease-in-out infinite;
+      inset: -4px;
+      border-radius: 1.25rem;
+      border: 2px solid transparent;
+      border-top-color: var(--fs-cyan);
+      border-right-color: rgba(139, 92, 246, 0.3);
+      animation: loaderSpin 1.1s linear infinite;
     }
     @keyframes loaderSpin {
       to { transform: rotate(360deg); }
-    }
-    @keyframes loaderPulse {
-      0%, 100% { transform: scale(0.92); opacity: 0.85; }
-      50% { transform: scale(1.06); opacity: 1; }
     }
     .global-loader__text {
       font-size: 0.9375rem;
@@ -175,14 +354,20 @@
       75% { content: '...'; }
     }
     .assort-card {
-      border: 1px solid #f1f5f9;
+      border: 1px solid var(--fs-glass-border);
       border-radius: 1rem;
       padding: 0.875rem 1rem;
-      background: #fff;
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 4px 20px rgba(139, 92, 246, 0.06);
+      transition: box-shadow 0.25s, transform 0.25s;
+    }
+    .assort-card:hover {
+      box-shadow: 0 12px 32px rgba(139, 92, 246, 0.12);
     }
     .assort-card--promo {
-      border-color: #bbf7d0;
-      background: linear-gradient(180deg, #f0fdf4 0%, #fff 3rem);
+      border-color: rgba(16, 185, 129, 0.35);
+      background: linear-gradient(180deg, rgba(240, 253, 244, 0.95) 0%, rgba(255, 255, 255, 0.9) 3rem);
     }
     .assort-card--skeleton .skel { margin-top: 0.35rem; }
     .assort-field input {
@@ -194,10 +379,32 @@
     }
     .assort-metric {
       border-radius: 0.75rem;
-      background: #f8fafc;
+      background: linear-gradient(180deg, rgba(248, 250, 252, 0.95), rgba(241, 245, 249, 0.8));
+      border: 1px solid rgba(226, 232, 240, 0.8);
       padding: 0.5rem 0.625rem;
       text-align: center;
     }
+    .paywall-card {
+      border: 1px solid var(--fs-glass-border);
+      background: var(--fs-glass);
+      backdrop-filter: blur(20px);
+      box-shadow: 0 32px 80px rgba(139, 92, 246, 0.2);
+    }
+    .paywall-logo {
+      width: 4.5rem;
+      height: 4.5rem;
+      margin: 0 auto 1rem;
+      object-fit: contain;
+      border-radius: 1rem;
+      box-shadow: 0 12px 40px rgba(34, 211, 238, 0.35);
+    }
+    #profit.text-emerald-600 {
+      background: linear-gradient(120deg, #059669 0%, #0d9488 40%, #7c3aed 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    #profit.text-red-600 { text-shadow: 0 0 24px rgba(220, 38, 38, 0.15); }
     .assort-metric__label {
       font-size: 0.65rem;
       font-weight: 600;
@@ -228,16 +435,23 @@
     }
   </style>
 </head>
-<body class="min-h-screen w-full bg-slate-100 text-slate-800 antialiased">
+<body class="min-h-screen w-full text-slate-800 antialiased">
 
   <div id="appRoot" class="app-root">
-  <header class="w-full border-b border-white/80 bg-white/90 shadow-sm backdrop-blur-md">
+  <header class="fs-header w-full">
     <div class="flex w-full min-w-0 flex-wrap items-center justify-between gap-3 px-3 py-3 sm:px-4 sm:py-4">
-      <div class="flex items-center gap-3">
-        <img src="finseller-icon2.png" alt="FinSeller" width="48" height="48" class="app-icon h-12 w-12 shrink-0 rounded-xl" />
+      <div class="flex min-w-0 items-center gap-3">
+        <div class="logo-wrap">
+          <img src="finseller-logo2.png" alt="FinSeller" width="52" height="52" class="app-icon shrink-0" onerror="this.onerror=null;this.src='finseller-icon2.png'" />
+        </div>
         <div class="min-w-0">
-          <h1 class="text-base font-bold leading-tight text-slate-900 sm:text-lg">FinSeller — карманный финансовый директор для продавца</h1>
-          <p class="text-xs text-slate-500">Ozon · юнит-экономика · ассортимент · сводка ЛК</p>
+          <h1 class="brand-title text-base leading-tight sm:text-lg">FinSeller</h1>
+          <p class="brand-sub text-xs sm:text-sm">Карманный финансовый директор для продавца Ozon</p>
+          <div class="fs-trust hidden sm:flex">
+            <span>Комиссии 2026</span>
+            <span>API Ozon</span>
+            <span>Без Excel</span>
+          </div>
         </div>
       </div>
       <div class="flex flex-wrap items-center justify-end gap-2">
@@ -255,8 +469,8 @@
 
   <main class="w-full min-w-0 space-y-4 px-3 py-4 sm:space-y-6 sm:px-4 sm:py-6">
 
-    <section id="authSection" class="w-full min-w-0 rounded-2xl border border-slate-100 bg-white p-4 shadow-lg sm:p-5">
-      <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Ozon Seller API</h2>
+    <section id="authSection" class="fs-panel w-full min-w-0 p-4 sm:p-5">
+      <h2 class="fs-panel-title mb-3">Ozon Seller API</h2>
       <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <label class="block text-sm">
           <span class="mb-1 block text-slate-600">Client-ID</span>
@@ -274,15 +488,15 @@
     </section>
 
     <nav class="grid w-full grid-cols-1 gap-2 min-[420px]:grid-cols-3">
-      <button type="button" class="tab-btn active w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium shadow-sm sm:px-4" data-tab="tab-calc">🧮 Быстрый калькулятор</button>
-      <button type="button" class="tab-btn w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-600 shadow-sm sm:px-4" data-tab="tab-assort">📦 Мой ассортимент (из API)</button>
-      <button type="button" class="tab-btn w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-600 shadow-sm sm:px-4" data-tab="tab-analytics">📊 Сводка ЛК</button>
+      <button type="button" class="tab-btn active w-full rounded-xl border border-white/80 bg-white/80 px-3 py-2.5 text-sm font-semibold shadow-sm backdrop-blur-sm sm:px-4" data-tab="tab-calc">Быстрый калькулятор</button>
+      <button type="button" class="tab-btn w-full rounded-xl border border-white/80 bg-white/80 px-3 py-2.5 text-sm font-semibold text-slate-600 shadow-sm backdrop-blur-sm sm:px-4" data-tab="tab-assort">Мой ассортимент</button>
+      <button type="button" class="tab-btn w-full rounded-xl border border-white/80 bg-white/80 px-3 py-2.5 text-sm font-semibold text-slate-600 shadow-sm backdrop-blur-sm sm:px-4" data-tab="tab-analytics">Сводка ЛК</button>
     </nav>
 
     <section id="tab-calc" class="tab-panel active w-full min-w-0">
       <div class="grid w-full min-w-0 gap-4 lg:grid-cols-2 lg:gap-6">
-        <div class="w-full min-w-0 space-y-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-lg sm:p-6">
-          <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Параметры</h2>
+        <div class="fs-panel w-full min-w-0 space-y-4 p-4 sm:p-6">
+          <h2 class="fs-panel-title">Параметры</h2>
 
           <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <label class="text-sm"><span class="text-slate-500">Длина, см</span><input id="len" type="number" min="1" value="30" class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5" /></label>
@@ -373,7 +587,7 @@
           </div>
         </div>
 
-        <div class="w-full min-w-0 rounded-2xl border border-slate-100 bg-white p-4 shadow-lg sm:p-6">
+        <div class="fs-panel w-full min-w-0 p-4 sm:p-6">
           <p class="text-sm text-slate-500">Чистая прибыль на единицу</p>
           <p id="profit" class="metric mt-2 text-4xl font-bold text-emerald-600">—</p>
           <div class="mt-4 grid grid-cols-2 gap-4">
@@ -388,9 +602,9 @@
     </section>
 
     <section id="tab-assort" class="tab-panel">
-      <div class="rounded-2xl border border-slate-100 bg-white p-4 shadow-lg sm:p-6">
+      <div class="fs-panel p-4 sm:p-6">
         <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Ассортимент</h2>
+          <h2 class="fs-panel-title">Ассортимент</h2>
           <p id="assortHint" class="text-xs text-slate-500">Демо-товары (подключите API для загрузки)</p>
         </div>
         <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end">
@@ -419,10 +633,10 @@
 
     <section id="tab-analytics" class="tab-panel">
       <div class="space-y-4">
-        <div class="rounded-2xl border border-slate-100 bg-white p-4 shadow-lg sm:p-6">
+        <div class="fs-panel p-4 sm:p-6">
           <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Аналитика личного кабинета</h2>
+              <h2 class="fs-panel-title">Аналитика личного кабинета</h2>
               <p class="mt-1 text-xs text-slate-500">Финансы и продажи из Ozon Seller API · сравнение с предыдущим периодом той же длины</p>
             </div>
             <button id="btnDashLoad" type="button" class="rounded-xl bg-ozon px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-ozon-dark disabled:opacity-50">Обновить сводку</button>
@@ -453,7 +667,7 @@
           <p id="dashError" class="mt-2 hidden text-sm text-red-600"></p>
         </div>
         <div id="dashKpis" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"></div>
-        <div id="dashCompare" class="hidden rounded-2xl border border-blue-100 bg-blue-50/60 p-4 text-sm"></div>
+        <div id="dashCompare" class="fs-panel hidden border-violet-200/60 bg-gradient-to-br from-violet-50/80 to-cyan-50/50 p-4 text-sm"></div>
         <div class="dash-charts-panel rounded-2xl p-4 sm:p-6">
           <h3 class="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Диаграммы</h3>
           <div class="grid gap-4 lg:grid-cols-2 lg:gap-5">
@@ -476,26 +690,26 @@
           </div>
         </div>
         <div class="grid gap-4 lg:grid-cols-2">
-          <div class="rounded-2xl border border-slate-100 bg-white p-4 shadow-lg sm:p-5">
+          <div class="fs-panel p-4 sm:p-5">
             <h3 class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Движение денег (Ozon)</h3>
             <div id="dashFinance" class="space-y-2 text-sm"></div>
           </div>
-          <div class="rounded-2xl border border-slate-100 bg-white p-4 shadow-lg sm:p-5">
+          <div class="fs-panel p-4 sm:p-5">
             <h3 class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Оценка налогов</h3>
             <div id="dashTaxEst" class="space-y-2 text-sm"></div>
             <p class="mt-3 text-xs text-slate-400">Расчёт ориентировочный: ставки из вкладки «Быстрый калькулятор».</p>
           </div>
         </div>
-        <div class="rounded-2xl border border-slate-100 bg-white p-4 shadow-lg sm:p-5">
+        <div class="fs-panel p-4 sm:p-5">
           <h3 class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Продажи по дням</h3>
           <div id="dashAnalytics" class="overflow-x-auto text-sm"></div>
         </div>
         <div class="grid gap-4 lg:grid-cols-2">
-          <div class="rounded-2xl border border-slate-100 bg-white p-4 shadow-lg sm:p-5">
+          <div class="fs-panel p-4 sm:p-5">
             <h3 class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Услуги Ozon (отчёт)</h3>
             <div id="dashServices" class="max-h-80 overflow-y-auto text-sm"></div>
           </div>
-          <div class="rounded-2xl border border-slate-100 bg-white p-4 shadow-lg sm:p-5">
+          <div class="fs-panel p-4 sm:p-5">
             <h3 class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Типы операций</h3>
             <div id="dashOpTypes" class="max-h-80 overflow-y-auto text-sm"></div>
           </div>
@@ -510,20 +724,18 @@
     <div class="global-loader__card">
       <div class="global-loader__visual">
         <span class="global-loader__ring" aria-hidden="true"></span>
-        <span class="global-loader__ring" aria-hidden="true"></span>
-        <span class="global-loader__ring" aria-hidden="true"></span>
-        <span class="global-loader__core" aria-hidden="true"></span>
+        <img src="finseller-logo2.png" alt="" class="global-loader__logo" width="80" height="80" onerror="this.onerror=null;this.src='finseller-icon2.png'" />
       </div>
       <p id="globalLoaderTitle" class="global-loader__text">Загрузка<span class="global-loader__dots"></span></p>
       <p id="globalLoaderSub" class="global-loader__sub"></p>
     </div>
   </div>
 
-  <div id="paywallModal" class="fixed inset-0 z-[200] hidden items-center justify-center bg-slate-900/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="paywallTitle">
-    <div class="w-full max-w-lg rounded-3xl border border-white/10 bg-white p-6 shadow-2xl sm:p-8">
+  <div id="paywallModal" class="fixed inset-0 z-[200] hidden items-center justify-center bg-slate-900/75 p-4 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="paywallTitle">
+    <div class="paywall-card w-full max-w-lg rounded-3xl p-6 sm:p-8">
       <div class="mb-5 text-center">
-        <div class="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-2xl">🔒</div>
-        <h2 id="paywallTitle" class="text-xl font-bold text-slate-900">Доступ ограничен 🔒</h2>
+        <img src="finseller-logo2.png" alt="FinSeller" class="paywall-logo" width="72" height="72" onerror="this.onerror=null;this.src='finseller-icon2.png'" />
+        <h2 id="paywallTitle" class="text-xl font-bold text-slate-900">Доступ ограничен</h2>
         <p class="mt-2 text-sm text-slate-600">Ваш бесплатный период (7 дней) или оплаченная подписка завершились.</p>
       </div>
       <div class="mb-6 grid gap-3 sm:grid-cols-2">
@@ -532,8 +744,8 @@
           <p class="mt-1 text-lg font-bold text-slate-900">1 неделя</p>
           <p class="mt-1 text-2xl font-bold text-ozon">500 ₽</p>
         </div>
-        <div class="rounded-2xl border-2 border-ozon/30 bg-blue-50/60 p-4 text-center">
-          <p class="text-xs font-semibold uppercase tracking-wide text-ozon">Выгоднее</p>
+        <div class="rounded-2xl border-2 border-violet-300/50 bg-gradient-to-br from-violet-50/90 to-pink-50/80 p-4 text-center shadow-sm">
+          <p class="text-xs font-semibold uppercase tracking-wide text-violet-600">Выгоднее</p>
           <p class="mt-1 text-lg font-bold text-slate-900">1 месяц</p>
           <p class="mt-1 text-2xl font-bold text-ozon">1 200 ₽</p>
         </div>
@@ -725,7 +937,7 @@
         tg.ready();
         tg.expand();
         if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes();
-        if (typeof tg.setHeaderColor === 'function') tg.setHeaderColor('#ffffff');
+        if (typeof tg.setHeaderColor === 'function') tg.setHeaderColor('#f8fafc');
         if (typeof tg.setBackgroundColor === 'function') tg.setBackgroundColor('#f1f5f9');
         if (typeof tg.onEvent === 'function') tg.onEvent('viewportChanged', applyTelegramViewport);
       } catch (_) { /* ignore */ }
@@ -1206,12 +1418,12 @@
       state.connected = on;
       const el = $('statusBadge');
       if (on) {
-        el.className = 'flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700';
-        el.innerHTML = '<span class="h-2 w-2 rounded-full bg-emerald-500"></span><span id="statusText">Подключено</span>';
+        el.className = 'status--on flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-semibold';
+        el.innerHTML = '<span class="h-2 w-2 shrink-0 rounded-full"></span><span id="statusText">Подключено</span>';
         setAuthPanelVisible(false);
       } else {
-        el.className = 'flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-sm text-slate-500';
-        el.innerHTML = '<span class="h-2 w-2 rounded-full bg-slate-400"></span><span id="statusText">' + (err || 'Офлайн-тарифы') + '</span>';
+        el.className = 'flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/70 px-3 py-1.5 text-sm text-slate-500';
+        el.innerHTML = '<span class="h-2 w-2 shrink-0 rounded-full bg-slate-400"></span><span id="statusText">' + (err || 'Офлайн-тарифы') + '</span>';
         setAuthPanelVisible(true);
       }
     }
@@ -3315,7 +3527,7 @@
       ];
       $('dashKpis').innerHTML = cards.map((c) => {
         const fmt = c.fmt || rub;
-        return '<div class="rounded-2xl border border-slate-100 bg-white p-4 shadow"><p class="text-xs text-slate-500">' + c.title + '</p><p class="mt-1 text-2xl font-bold text-slate-900">' + fmt(c.val) + '</p><p class="mt-1">' + (c.prev != null ? deltaBadge(c.val, c.prev, c.invert) : '') + '</p></div>';
+        return '<div class="fs-panel p-4"><p class="text-xs font-semibold uppercase tracking-wide text-slate-500">' + c.title + '</p><p class="mt-1 text-2xl font-bold bg-gradient-to-r from-violet-600 to-pink-500 bg-clip-text text-transparent">' + fmt(c.val) + '</p><p class="mt-1">' + (c.prev != null ? deltaBadge(c.val, c.prev, c.invert) : '') + '</p></div>';
       }).join('');
     }
     function renderDashCompare(cur, prev) {
