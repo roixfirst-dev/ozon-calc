@@ -174,8 +174,42 @@
       50% { content: '..'; }
       75% { content: '...'; }
     }
-    tr.assort-skeleton td {
-      padding: 0.85rem 0.75rem;
+    .assort-card {
+      border: 1px solid #f1f5f9;
+      border-radius: 1rem;
+      padding: 0.875rem 1rem;
+      background: #fff;
+    }
+    .assort-card--promo {
+      border-color: #bbf7d0;
+      background: linear-gradient(180deg, #f0fdf4 0%, #fff 3rem);
+    }
+    .assort-card--skeleton .skel { margin-top: 0.35rem; }
+    .assort-field input {
+      width: 100%;
+      border-radius: 0.5rem;
+      border: 1px solid #e2e8f0;
+      padding: 0.375rem 0.5rem;
+      font-size: 0.875rem;
+    }
+    .assort-metric {
+      border-radius: 0.75rem;
+      background: #f8fafc;
+      padding: 0.5rem 0.625rem;
+      text-align: center;
+    }
+    .assort-metric__label {
+      font-size: 0.65rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #64748b;
+    }
+    .assort-metric__value {
+      margin-top: 0.15rem;
+      font-size: 1rem;
+      font-weight: 700;
+      line-height: 1.2;
     }
     .skel {
       display: block;
@@ -359,31 +393,27 @@
           <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Ассортимент</h2>
           <p id="assortHint" class="text-xs text-slate-500">Демо-товары (подключите API для загрузки)</p>
         </div>
-        <label class="mb-4 block text-sm">
-          <span class="sr-only">Поиск по названию</span>
-          <input id="assortSearch" type="search" autocomplete="off" placeholder="Поиск по названию или артикулу…" class="w-full max-w-md rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-ozon focus:outline-none focus:ring-2 focus:ring-ozon/20" />
-        </label>
-        <div class="max-w-full overflow-x-auto">
-          <table class="w-full min-w-[1350px] text-left text-sm">
-            <thead class="border-b border-slate-100 text-xs uppercase text-slate-500">
-              <tr>
-                <th class="py-2 pr-3">Товар</th>
-                <th class="py-2 pr-3">Остаток</th>
-                <th class="py-2 pr-3">Объём</th>
-                <th class="py-2 pr-3">Комиссия %</th>
-                <th class="py-2 pr-3">Себест.</th>
-                <th class="py-2 pr-3">Цена Ozon</th>
-                <th class="py-2 pr-3">Тест-цена</th>
-                <th class="py-2 pr-3">ДРР, %</th>
-                <th class="py-2 pr-3">Схема</th>
-                <th class="py-2 pr-3">Прибыль</th>
-                <th class="py-2 pr-3">Маржа</th>
-                <th class="py-2">ROI</th>
-              </tr>
-            </thead>
-            <tbody id="assortBody"></tbody>
-          </table>
+        <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end">
+          <label class="block flex-1 text-sm">
+            <span class="sr-only">Поиск по названию</span>
+            <input id="assortSearch" type="search" autocomplete="off" placeholder="Поиск по названию или артикулу…" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-ozon focus:outline-none focus:ring-2 focus:ring-ozon/20" />
+          </label>
+          <label class="block shrink-0 text-sm sm:w-52">
+            <span class="mb-1 block text-xs text-slate-500">Сортировка</span>
+            <select id="assortSort" class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-ozon focus:outline-none focus:ring-2 focus:ring-ozon/20">
+              <option value="default">Как в каталоге</option>
+              <option value="profit_asc">Прибыль: сначала меньше</option>
+              <option value="profit_desc">Прибыль: сначала больше</option>
+              <option value="margin_asc">Маржа %: сначала ниже</option>
+              <option value="margin_desc">Маржа %: сначала выше</option>
+              <option value="roi_asc">ROI: сначала ниже</option>
+              <option value="roi_desc">ROI: сначала выше</option>
+              <option value="loss_first">Сначала убыточные</option>
+              <option value="breakeven_first">Сначала около нуля</option>
+            </select>
+          </label>
         </div>
+        <div id="assortList" class="space-y-3"></div>
       </div>
     </section>
 
@@ -533,6 +563,7 @@
     const LS_COMMISSION_TABLE = 'ozon_ue_commission_table_2026';
     const LS_DASH_FROM = 'ozon_ue_dash_from';
     const LS_DASH_TO = 'ozon_ue_dash_to';
+    const LS_ASSORT_SORT = 'ozon_ue_assort_sort';
     const COMMISSION_SHEET_ID = '1Kh31uRcKJJ5SU-TZHBtsBlZ4W4SH9QzT1eJA78dcBtY';
     const LOGISTICS_SHEET_ID = '1FNqyAsIcI3wCrVvqnQmo1gEWdOzsp00Z64eKhpNgy7Y';
     const COMMISSION_TABLE_URL = 'unit.xlsx';
@@ -547,7 +578,7 @@
       apiOk: false, lastApiError: '', apiLog: [], commissionTable: null,
       logisticsTables: { FBS: null, FBO: null }, logisticsReady: false, logisticsError: '',
       categoryTypeById: new Map(),
-      assortSearch: '', dataLoading: false,
+      assortSearch: '', assortSort: 'default', dataLoading: false,
       dashboard: { loading: false, loaded: false, data: null, charts: {} },
       subscriptionBlocked: false,
       subscription: null,
@@ -1577,7 +1608,7 @@
     async function applyLogisticsRecalc() {
       await fetchTariff();
       recalc();
-      state.products.forEach((p) => recalcRow(p.offer_id));
+      recalcAllAssortRows();
     }
 
     async function loadLogisticsFromGoogleSheet() {
@@ -1853,7 +1884,7 @@
       state.commissionTable = table;
       localStorage.setItem(LS_COMMISSION_TABLE, JSON.stringify(table));
       updateCommissionHint();
-      state.products.forEach((p) => recalcRow(p.offer_id));
+      recalcAllAssortRows();
     }
 
     async function importCommissionBuffer(buf) {
@@ -2267,16 +2298,24 @@
       return state.rowSchemes[offerId] || 'FBO';
     }
 
-    function recalcRow(offerId) {
-      const p = state.products.find((x) => x.offer_id === offerId);
-      if (!p) return;
+    function getProductEconomics(p) {
+      const offerId = p.offer_id;
       const vol = p.volume_liters ?? productVolumeLiters(p);
       const scheme = getRowScheme(offerId);
-      const testPrice = valueOrFallback(localStorage.getItem('test_price_' + offerId), Number(document.querySelector('[data-test-price="' + offerId + '"]')?.value) || p.price);
-      const purchase = valueOrFallback(localStorage.getItem('sub_cost_' + offerId), Number(document.querySelector('[data-cost="' + offerId + '"]')?.value) || 0);
-      const adDrr = valueOrFallback(localStorage.getItem('ad_drr_' + offerId), Number(document.querySelector('[data-ad-drr="' + offerId + '"]')?.value) || Number($('marketing')?.value) || 0);
+      const testPrice = valueOrFallback(
+        localStorage.getItem('test_price_' + offerId),
+        Number(document.querySelector('[data-test-price="' + offerId + '"]')?.value) || p.price
+      );
+      const purchase = valueOrFallback(
+        localStorage.getItem('sub_cost_' + offerId),
+        Number(document.querySelector('[data-cost="' + offerId + '"]')?.value) || 0
+      );
+      const adDrr = valueOrFallback(
+        localStorage.getItem('ad_drr_' + offerId),
+        Number(document.querySelector('[data-ad-drr="' + offerId + '"]')?.value) || Number($('marketing')?.value) || 0
+      );
       const tariff = getProductTariff(p, scheme, vol, testPrice);
-      const r = computeEconomics({
+      return computeEconomics({
         price: testPrice,
         purchase,
         extra: Number($('extra')?.value) || 0,
@@ -2291,7 +2330,16 @@
         vol,
         tariff,
       });
-      const commPct = commissionFromTable(p, scheme, testPrice) ?? tariff.commissionPct;
+    }
+
+    function recalcRow(offerId) {
+      const p = state.products.find((x) => x.offer_id === offerId);
+      if (!p) return;
+      const vol = p.volume_liters ?? productVolumeLiters(p);
+      const scheme = getRowScheme(offerId);
+      const testPrice = valueOrFallback(localStorage.getItem('test_price_' + offerId), Number(document.querySelector('[data-test-price="' + offerId + '"]')?.value) || p.price);
+      const r = getProductEconomics(p);
+      const commPct = commissionFromTable(p, scheme, testPrice) ?? r.tariff.commissionPct;
       const profitEl = document.querySelector('[data-profit="' + offerId + '"]');
       const marginEl = document.querySelector('[data-margin="' + offerId + '"]');
       const roiEl = document.querySelector('[data-roi="' + offerId + '"]');
@@ -2301,7 +2349,7 @@
       const breakdownEl = document.querySelector('[data-breakdown-body="' + offerId + '"]');
       if (profitEl) {
         profitEl.textContent = rub(r.net);
-        profitEl.className = 'font-semibold ' + (r.net > 0 ? 'text-emerald-600' : r.net < 0 ? 'text-red-600' : 'text-slate-500');
+        profitEl.className = 'assort-metric__value ' + (r.net > 0 ? 'text-emerald-600' : r.net < 0 ? 'text-red-600' : 'text-slate-500');
       }
       if (marginEl) marginEl.textContent = pct(r.margin);
       if (roiEl) roiEl.textContent = pct(r.roi);
@@ -2344,31 +2392,82 @@
       });
     }
 
+    function isNearBreakeven(r) {
+      return Math.abs(r.net) <= 25 || Math.abs(r.margin) < 0.5;
+    }
+
+    function sortAssortProducts(products) {
+      const mode = state.assortSort || 'default';
+      const list = products.slice();
+      if (mode === 'default' || !list.length) return list;
+      const metrics = list.map((p) => ({ p, r: getProductEconomics(p) }));
+      const num = (v) => (Number.isFinite(v) ? v : -Infinity);
+      const tie = (a, b) => String(a.p.offer_id || '').localeCompare(String(b.p.offer_id || ''), 'ru');
+      metrics.sort((a, b) => {
+        const ra = a.r;
+        const rb = b.r;
+        let d = 0;
+        if (mode === 'profit_asc') d = num(ra.net) - num(rb.net);
+        else if (mode === 'profit_desc') d = num(rb.net) - num(ra.net);
+        else if (mode === 'margin_asc') d = num(ra.margin) - num(rb.margin);
+        else if (mode === 'margin_desc') d = num(rb.margin) - num(ra.margin);
+        else if (mode === 'roi_asc') d = num(ra.roi) - num(rb.roi);
+        else if (mode === 'roi_desc') d = num(rb.roi) - num(ra.roi);
+        else if (mode === 'loss_first') {
+          const aLoss = ra.net < 0 ? 0 : 1;
+          const bLoss = rb.net < 0 ? 0 : 1;
+          if (aLoss !== bLoss) d = aLoss - bLoss;
+          else d = num(ra.net) - num(rb.net);
+        } else if (mode === 'breakeven_first') {
+          const az = isNearBreakeven(ra) ? 0 : 1;
+          const bz = isNearBreakeven(rb) ? 0 : 1;
+          if (az !== bz) d = az - bz;
+          else d = Math.abs(num(ra.net)) - Math.abs(num(rb.net));
+        }
+        return d !== 0 ? d : tie(a, b);
+      });
+      return metrics.map((x) => x.p);
+    }
+
+    function reorderAssortCards() {
+      const list = $('assortList');
+      if (!list || state.assortSort === 'default') return;
+      const order = sortAssortProducts(filteredProducts()).map((p) => p.offer_id);
+      const byId = new Map();
+      list.querySelectorAll('.assort-card[data-offer-id]').forEach((el) => byId.set(el.dataset.offerId, el));
+      order.forEach((id) => {
+        const el = byId.get(id);
+        if (el) list.appendChild(el);
+      });
+    }
+
+    function recalcAllAssortRows() {
+      state.products.forEach((p) => recalcRow(p.offer_id));
+      reorderAssortCards();
+    }
+
     function renderAssortment() {
-      const tbody = $('assortBody');
-      tbody.innerHTML = '';
+      const list = $('assortList');
+      if (!list) return;
+      list.innerHTML = '';
       if (state.dataLoading) {
-        for (let i = 0; i < 6; i++) {
-          const tr = document.createElement('tr');
-          tr.className = 'assort-skeleton border-b border-slate-50';
-          tr.innerHTML =
-            '<td class="py-3 pr-3"><div class="flex min-w-[200px] items-center gap-3"><span class="skel skel--lg"></span><div class="flex-1 space-y-1"><span class="skel skel--md"></span><span class="skel skel--sm"></span></div></div></td>' +
-            '<td class="py-3 pr-3"><span class="skel skel--sm"></span></td>'.repeat(11);
-          tbody.appendChild(tr);
+        for (let i = 0; i < 4; i++) {
+          const card = document.createElement('article');
+          card.className = 'assort-card assort-card--skeleton';
+          card.innerHTML =
+            '<div class="flex gap-3"><span class="skel skel--lg shrink-0"></span><div class="flex-1"><span class="skel skel--md"></span><span class="skel skel--sm"></span><span class="skel skel--sm"></span></div></div>' +
+            '<div class="mt-3 grid grid-cols-3 gap-2"><span class="skel skel--sm"></span><span class="skel skel--sm"></span><span class="skel skel--sm"></span></div>';
+          list.appendChild(card);
         }
         return;
       }
-      const visible = filteredProducts();
+      const visible = sortAssortProducts(filteredProducts());
       if (!state.products.length) {
-        const tr = document.createElement('tr');
-        tr.innerHTML = '<td colspan="12" class="py-8 text-center text-sm text-slate-500">Товары не получены. Проверьте ключи API и нажмите «Подключить».</td>';
-        tbody.appendChild(tr);
+        list.innerHTML = '<p class="py-8 text-center text-sm text-slate-500">Товары не получены. Проверьте ключи API и нажмите «Подключить».</p>';
         return;
       }
       if (state.products.length && !visible.length) {
-        const tr = document.createElement('tr');
-        tr.innerHTML = '<td colspan="12" class="py-8 text-center text-sm text-slate-500">Ничего не найдено по запросу «' + escapeHtml(state.assortSearch || $('assortSearch')?.value || '') + '»</td>';
-        tbody.appendChild(tr);
+        list.innerHTML = '<p class="py-8 text-center text-sm text-slate-500">Ничего не найдено по запросу «' + escapeHtml(state.assortSearch || $('assortSearch')?.value || '') + '»</p>';
         return;
       }
       visible.forEach((p) => {
@@ -2377,73 +2476,77 @@
         const savedTest = localStorage.getItem('test_price_' + oid) || String(p.price);
         const savedDrr = localStorage.getItem('ad_drr_' + oid) ?? $('marketing').value;
         const scheme = getRowScheme(oid);
-        const imageHtml = p.image
-          ? "<img src=\"" + escapeHtml(p.image) + "\" alt=\"\" loading=\"lazy\" class=\"h-12 w-12 rounded-lg object-cover bg-slate-100\" onerror=\"this.style.display='none'\" />"
-          : '<div class="flex h-12 w-12 items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-400">нет фото</div>';
-        const tr = document.createElement('tr');
-        tr.className = 'border-b align-middle ' + (p.isPromo ? 'bg-emerald-50/40 border-emerald-100' : 'border-slate-50');
         const testPriceNum = Number(savedTest) || p.price;
         const tableComm = commissionFromTable(p, scheme, testPriceNum);
         const tableMatched = tableComm != null;
+        const imageHtml = p.image
+          ? '<img src="' + escapeHtml(p.image) + '" alt="" loading="lazy" class="h-14 w-14 shrink-0 rounded-xl object-cover bg-slate-100" onerror="this.style.display=\'none\'" />'
+          : '<div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-[10px] text-slate-400">нет фото</div>';
         const priceBadge = p.isPromo
-          ? '<span class="mt-1 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">в акции</span>'
-          : '<span class="mt-1 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">обычная цена</span>';
-        const priceCell = '<div class="font-medium text-slate-700">' + rub(p.price) + '</div>' +
-          (p.isPromo && p.basePrice ? '<div class="text-xs text-slate-400 line-through">' + rub(p.basePrice) + '</div>' : '') +
-          '<div class="text-[11px] text-slate-400">' + escapeHtml(p.priceSource || '') + '</div>' +
-          priceBadge;
-        const commissionCell =
-          '<td class="py-3 pr-3 text-xs text-slate-600">' +
-          '<div class="font-medium ' + (tableMatched ? 'text-emerald-700' : '') + '" data-commission="' + oid + '">' + pct(tableComm ?? p.tariffs?.[scheme]?.commissionPct) + '</div>' +
-          '<div class="text-slate-400" data-commission-sub="' + oid + '">' + (tableMatched ? 'таблица 2026 · ' + scheme : 'порог / API') + '</div>' +
-          '</td>';
-        tr.innerHTML =
-          '<td class="py-3 pr-3"><div class="flex min-w-[260px] items-center gap-3">' + imageHtml + '<div><div class="font-medium">' + escapeHtml(p.name) + '</div><div class="text-xs text-slate-400">' + escapeHtml(oid) + '</div><div class="text-[11px] text-slate-400">' + escapeHtml([p.categoryName, p.typeName].filter(Boolean).join(' › ')) + '</div><div class="text-[11px] text-slate-400" data-tariff-source="' + oid + '">—</div></div></div></td>' +
-          '<td class="py-3 pr-3 text-slate-600">' + (Number.isFinite(p.stock) ? p.stock : '—') + '</td>' +
-          '<td class="py-3 pr-3 text-xs text-slate-600" data-volume="' + oid + '">' +
-          (p.volume_liters != null ? '<div class="font-medium">' + p.volume_liters.toFixed(2).replace('.', ',') + ' л</div>' : '—') +
-          (p.dimsLabel ? '<div class="text-[11px] text-slate-400">' + escapeHtml(p.dimsLabel) + '</div>' : '') +
-          '</td>' +
-          commissionCell +
-          '<td class="py-3 pr-3"><input data-cost="' + oid + '" type="number" min="0" value="' + savedCost + '" placeholder="0" class="w-24 rounded border border-slate-200 px-2 py-1" /></td>' +
-          '<td class="py-3 pr-3 text-slate-600">' + priceCell + '</td>' +
-          '<td class="py-3 pr-3"><input data-test-price="' + oid + '" type="number" min="0" value="' + savedTest + '" class="w-24 rounded border border-slate-200 px-2 py-1" /></td>' +
-          '<td class="py-3 pr-3"><input data-ad-drr="' + oid + '" type="number" min="0" max="100" step="0.1" value="' + savedDrr + '" class="w-20 rounded border border-slate-200 px-2 py-1" /></td>' +
-          '<td class="py-3 pr-3"><div class="flex gap-1">' +
-          '<button type="button" class="row-scheme-btn rounded border px-2 py-0.5 text-xs ' + (scheme === 'FBO' ? 'border-ozon bg-ozon text-white' : 'border-slate-200 text-slate-600') + '" data-offer="' + oid + '" data-scheme="FBO">FBO</button>' +
-          '<button type="button" class="row-scheme-btn rounded border px-2 py-0.5 text-xs ' + (scheme === 'FBS' ? 'border-ozon bg-ozon text-white' : 'border-slate-200 text-slate-600') + '" data-offer="' + oid + '" data-scheme="FBS">FBS</button>' +
-          '</div></td>' +
-          '<td class="py-3 pr-3" data-profit="' + oid + '">—</td>' +
-          '<td class="py-3 pr-3" data-margin="' + oid + '">—</td>' +
-          '<td class="py-3" data-roi="' + oid + '">—</td>';
-        tbody.appendChild(tr);
-        const detailTr = document.createElement('tr');
-        detailTr.className = 'border-b border-slate-50 bg-slate-50/40';
-        detailTr.innerHTML =
-          '<td colspan="12" class="px-3 pb-3 pt-0">' +
-          '<details class="text-xs"><summary class="cursor-pointer text-slate-500 hover:text-ozon">Расчёт по строкам</summary>' +
-          '<div class="pt-2" data-breakdown-body="' + oid + '"></div></details></td>';
-        tbody.appendChild(detailTr);
+          ? '<span class="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">в акции</span>'
+          : '<span class="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">обычная цена</span>';
+        const schemeBtn = (s) =>
+          '<button type="button" class="row-scheme-btn flex-1 rounded-lg border px-2 py-1.5 text-xs font-semibold ' +
+          (scheme === s ? 'border-ozon bg-ozon text-white' : 'border-slate-200 bg-white text-slate-600') +
+          '" data-offer="' + escapeHtml(oid) + '" data-scheme="' + s + '">' + s + '</button>';
+        const card = document.createElement('article');
+        card.className = 'assort-card' + (p.isPromo ? ' assort-card--promo' : '');
+        card.dataset.offerId = oid;
+        card.innerHTML =
+          '<div class="flex gap-3">' + imageHtml +
+          '<div class="min-w-0 flex-1">' +
+          '<div class="font-medium leading-snug text-slate-900">' + escapeHtml(p.name) + '</div>' +
+          '<div class="mt-0.5 text-xs text-slate-500">' + escapeHtml(oid) + '</div>' +
+          '<div class="mt-0.5 text-[11px] text-slate-400">' + escapeHtml([p.categoryName, p.typeName].filter(Boolean).join(' › ')) + '</div>' +
+          '<div class="mt-1 text-[11px] text-slate-400" data-tariff-source="' + escapeHtml(oid) + '">—</div>' +
+          '</div></div>' +
+          '<div class="mt-3 grid grid-cols-3 gap-2 text-center text-xs">' +
+          '<div class="rounded-lg bg-slate-50 px-2 py-1.5"><div class="text-slate-500">Остаток</div><div class="mt-0.5 font-semibold text-slate-800">' + (Number.isFinite(p.stock) ? p.stock : '—') + '</div></div>' +
+          '<div class="rounded-lg bg-slate-50 px-2 py-1.5" data-volume="' + escapeHtml(oid) + '"><div class="text-slate-500">Объём</div><div class="mt-0.5 font-semibold text-slate-800">' +
+          (p.volume_liters != null ? p.volume_liters.toFixed(2).replace('.', ',') + ' л' : '—') + '</div></div>' +
+          '<div class="rounded-lg bg-slate-50 px-2 py-1.5"><div class="text-slate-500">Комиссия</div>' +
+          '<div class="mt-0.5 font-semibold ' + (tableMatched ? 'text-emerald-700' : 'text-slate-800') + '" data-commission="' + escapeHtml(oid) + '">' + pct(tableComm ?? p.tariffs?.[scheme]?.commissionPct) + '</div>' +
+          '<div class="text-[10px] text-slate-400" data-commission-sub="' + escapeHtml(oid) + '">' + (tableMatched ? 'таблица 2026' : 'порог') + '</div></div>' +
+          '</div>' +
+          '<div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">' +
+          '<label class="assort-field text-xs"><span class="mb-1 block text-slate-500">Себест., ₽</span><input data-cost="' + escapeHtml(oid) + '" type="number" min="0" value="' + escapeHtml(savedCost) + '" placeholder="0" inputmode="decimal" /></label>' +
+          '<label class="assort-field text-xs"><span class="mb-1 block font-medium text-ozon">Тест-цена, ₽</span><input data-test-price="' + escapeHtml(oid) + '" type="number" min="0" value="' + escapeHtml(savedTest) + '" inputmode="decimal" /></label>' +
+          '<label class="assort-field text-xs"><span class="mb-1 block text-slate-500">ДРР, %</span><input data-ad-drr="' + escapeHtml(oid) + '" type="number" min="0" max="100" step="0.1" value="' + escapeHtml(savedDrr) + '" inputmode="decimal" /></label>' +
+          '<div class="text-xs"><span class="mb-1 block text-slate-500">Цена Ozon</span>' +
+          '<div class="rounded-lg border border-slate-100 bg-slate-50 px-2 py-1.5">' +
+          '<div class="font-semibold text-slate-800">' + rub(p.price) + '</div>' +
+          (p.isPromo && p.basePrice ? '<div class="text-[11px] text-slate-400 line-through">' + rub(p.basePrice) + '</div>' : '') +
+          '<div class="mt-0.5">' + priceBadge + '</div></div></div>' +
+          '</div>' +
+          '<div class="mt-3 flex gap-2">' + schemeBtn('FBO') + schemeBtn('FBS') + '</div>' +
+          '<div class="mt-3 grid grid-cols-3 gap-2">' +
+          '<div class="assort-metric"><div class="assort-metric__label">Прибыль</div><div class="assort-metric__value" data-profit="' + escapeHtml(oid) + '">—</div></div>' +
+          '<div class="assort-metric"><div class="assort-metric__label">Маржа</div><div class="assort-metric__value text-slate-800" data-margin="' + escapeHtml(oid) + '">—</div></div>' +
+          '<div class="assort-metric"><div class="assort-metric__label">ROI</div><div class="assort-metric__value text-slate-800" data-roi="' + escapeHtml(oid) + '">—</div></div>' +
+          '</div>' +
+          '<details class="mt-3 text-xs"><summary class="cursor-pointer text-slate-500 hover:text-ozon">Детализация расчёта</summary>' +
+          '<div class="pt-2" data-breakdown-body="' + escapeHtml(oid) + '"></div></details>';
+        list.appendChild(card);
       });
-      tbody.querySelectorAll('[data-cost]').forEach((inp) => {
+      list.querySelectorAll('[data-cost]').forEach((inp) => {
         inp.addEventListener('input', () => {
           localStorage.setItem('sub_cost_' + inp.dataset.cost, inp.value);
           recalcRow(inp.dataset.cost);
         });
       });
-      tbody.querySelectorAll('[data-test-price]').forEach((inp) => {
+      list.querySelectorAll('[data-test-price]').forEach((inp) => {
         inp.addEventListener('input', () => {
           localStorage.setItem('test_price_' + inp.dataset.testPrice, inp.value);
           recalcRow(inp.dataset.testPrice);
         });
       });
-      tbody.querySelectorAll('[data-ad-drr]').forEach((inp) => {
+      list.querySelectorAll('[data-ad-drr]').forEach((inp) => {
         inp.addEventListener('input', () => {
           localStorage.setItem('ad_drr_' + inp.dataset.adDrr, inp.value);
           recalcRow(inp.dataset.adDrr);
         });
       });
-      tbody.querySelectorAll('.row-scheme-btn').forEach((b) => {
+      list.querySelectorAll('.row-scheme-btn').forEach((b) => {
         b.addEventListener('click', () => setRowScheme(b.dataset.offer, b.dataset.scheme));
       });
       state.products.forEach((p) => recalcRow(p.offer_id));
@@ -2536,7 +2639,7 @@
       });
       updateSchemeUi();
       schedule();
-      state.products.forEach((p) => recalcRow(p.offer_id));
+      recalcAllAssortRows();
     }
 
     const FIN_TOTAL_KEYS = [
@@ -3397,7 +3500,7 @@
       localStorage.setItem(LS_TAX_SYSTEM, $('taxSystem').value);
       localStorage.setItem(LS_TAX_RATE, $('tax').value);
       recalc();
-      state.products.forEach((p) => recalcRow(p.offer_id));
+      recalcAllAssortRows();
     }
 
     async function verifySubscriptionOnStart() {
@@ -3434,13 +3537,13 @@
                   if (!localStorage.getItem('ad_drr_' + inp.dataset.adDrr)) inp.value = el.value;
                 });
               }
-              state.products.forEach((p) => recalcRow(p.offer_id));
+              recalcAllAssortRows();
             }
           }
         });
         el.addEventListener('change', () => {
           if (id === 'premium') schedule();
-          if (id === 'premium') state.products.forEach((p) => recalcRow(p.offer_id));
+          if (id === 'premium') recalcAllAssortRows();
         });
       });
       $('taxSystem').addEventListener('change', () => {
@@ -3483,6 +3586,19 @@
         state.assortSearch = e.target.value;
         renderAssortment();
       });
+      const assortSortEl = $('assortSort');
+      if (assortSortEl) {
+        const savedSort = localStorage.getItem(LS_ASSORT_SORT);
+        if (savedSort) {
+          state.assortSort = savedSort;
+          assortSortEl.value = savedSort;
+        }
+        assortSortEl.addEventListener('change', (e) => {
+          state.assortSort = e.target.value;
+          localStorage.setItem(LS_ASSORT_SORT, state.assortSort);
+          renderAssortment();
+        });
+      }
       $('fbsOrigin')?.addEventListener('change', () => {
         localStorage.setItem(LS_FBS_ORIGIN, $('fbsOrigin').value);
         applyLogisticsRecalc();
