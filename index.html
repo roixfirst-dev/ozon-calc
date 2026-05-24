@@ -172,7 +172,8 @@
     }
 
     .tab-panel { display: none; }
-    .tab-panel.active { display: block; animation: panelIn 0.4s ease both; }
+    .tab-panel.active { display: block; }
+    .tab-panel.active.tab-panel--animate { animation: panelIn 0.35s ease both; }
     .tab-btn {
       transition: transform 0.2s, box-shadow 0.2s, background 0.2s, border-color 0.2s, color 0.2s;
     }
@@ -605,7 +606,10 @@
       <div class="fs-panel p-4 sm:p-6">
         <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
           <h2 class="fs-panel-title">Ассортимент</h2>
-          <p id="assortHint" class="text-xs text-slate-500">Демо-товары (подключите API для загрузки)</p>
+          <div class="flex flex-wrap items-center justify-end gap-2">
+            <p id="assortHint" class="text-xs text-slate-500">Демо-товары (подключите API для загрузки)</p>
+            <button type="button" id="btnAssortRefresh" class="hidden rounded-lg border border-violet-200 bg-white/80 px-2.5 py-1 text-xs font-semibold text-violet-700 hover:bg-violet-50">↻ Обновить</button>
+          </div>
         </div>
         <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end">
           <label class="block flex-1 text-sm">
@@ -734,7 +738,7 @@
   <div id="paywallModal" class="fixed inset-0 z-[200] hidden items-center justify-center bg-slate-900/75 p-4 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="paywallTitle">
     <div class="paywall-card w-full max-w-lg rounded-3xl p-6 sm:p-8">
       <div class="mb-5 text-center">
-        <img src="finseller-logo2.png" alt="FinSeller" class="paywall-logo" width="72" height="72" onerror="this.onerror=null;this.src='finseller-icon2.png'" />
+        <img src="assets/finseller-logo.png" alt="FinSeller" class="paywall-logo" width="72" height="72" onerror="this.onerror=null;this.src='finseller-icon2.png'" />
         <h2 id="paywallTitle" class="text-xl font-bold text-slate-900">Доступ ограничен</h2>
         <p class="mt-2 text-sm text-slate-600">Ваш бесплатный период (7 дней) или оплаченная подписка завершились.</p>
       </div>
@@ -776,6 +780,9 @@
     const LS_DASH_FROM = 'ozon_ue_dash_from';
     const LS_DASH_TO = 'ozon_ue_dash_to';
     const LS_ASSORT_SORT = 'ozon_ue_assort_sort';
+    const LS_ASSORT_CACHE = 'ozon_ue_assort_cache_v1';
+    const ASSORT_CACHE_TTL_MS = 45 * 60 * 1000;
+    const ASSORT_ENRICH_CONCURRENCY = 3;
     const COMMISSION_SHEET_ID = '1Kh31uRcKJJ5SU-TZHBtsBlZ4W4SH9QzT1eJA78dcBtY';
     const LOGISTICS_SHEET_ID = '1FNqyAsIcI3wCrVvqnQmo1gEWdOzsp00Z64eKhpNgy7Y';
     const COMMISSION_TABLE_URL = 'unit.xlsx';
@@ -791,7 +798,9 @@
       logisticsTables: { FBS: null, FBO: null }, logisticsReady: false, logisticsError: '',
       categoryTypeById: new Map(),
       assortSearch: '', assortSort: 'default', dataLoading: false,
-      dashboard: { loading: false, loaded: false, data: null, charts: {} },
+      assortmentLoaded: false, assortmentLoading: false, productListPath: '',
+      dashboard: { loading: false, loaded: false, periodKey: '', data: null, charts: {} },
+      tabsVisited: {},
       subscriptionBlocked: false,
       subscription: null,
     };
@@ -2330,102 +2339,164 @@
       };
     }
 
+    function saveAssortCache(products) {
+      try {
+        sessionStorage.setItem(LS_ASSORT_CACHE, JSON.stringify({ at: Date.now(), products }));
+      } catch (_) { /* quota */ }
+    }
+
+    function loadAssortCache() {
+      try {
+        const raw = sessionStorage.getItem(LS_ASSORT_CACHE);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed?.products?.length) return null;
+        if (Date.now() - (parsed.at || 0) > ASSORT_CACHE_TTL_MS) return null;
+        return parsed.products;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function applyAssortProducts(products, hintText) {
+      state.products = products;
+      state.assortmentLoaded = products.length > 0;
+      if (hintText) $('assortHint').textContent = hintText;
+      $('btnAssortRefresh')?.classList.toggle('hidden', !state.connected);
+      renderAssortment();
+    }
+
+    function setAssortRefreshing(on) {
+      const btn = $('btnAssortRefresh');
+      if (btn) {
+        btn.disabled = on;
+        btn.textContent = on ? 'Обновление…' : '↻ Обновить';
+      }
+    }
+
     async function fetchAllProductListItems() {
       const all = [];
       let lastId = '';
+      const listAttempts = [
+        ['/v3/product/list', (lid) => ({ filter: { visibility: 'ALL' }, limit: 100, last_id: lid })],
+        ['/v3/product/list', (lid) => ({ limit: 100, last_id: lid })],
+        ['/v2/product/list', (lid) => ({ filter: { visibility: 'ALL' }, limit: 100, last_id: lid })],
+      ];
       for (let page = 0; page < 30; page++) {
-        const attempts = [
-          ['/v3/product/list', { filter: { visibility: 'ALL' }, limit: 100, last_id: lastId }],
-          ['/v3/product/list', { limit: 100, last_id: lastId }],
-          ['/v2/product/list', { filter: { visibility: 'ALL' }, limit: 100, last_id: lastId }],
-        ];
         let res = null;
         let result = {};
         let items = [];
-        for (const [path, body] of attempts) {
+        const attempts = state.productListPath
+          ? [[state.productListPath, listAttempts.find(([p]) => p === state.productListPath)?.[1] || listAttempts[0][1]]]
+          : listAttempts;
+        for (const [path, buildBody] of attempts) {
+          const body = buildBody(lastId);
           if (!lastId) delete body.last_id;
           res = await apiPost(path, body);
           result = res.data?.result || res.data || {};
           items = Array.isArray(result.items) ? result.items : [];
-          if (res.ok && items.length) break;
+          if (res.ok && items.length) {
+            if (!state.productListPath) state.productListPath = path;
+            break;
+          }
         }
         all.push(...items);
         lastId = result.last_id || '';
-        if (!res.ok || !items.length || !lastId || items.length < 100) break;
+        if (!res?.ok || !items.length || !lastId || items.length < 100) break;
       }
       return all;
+    }
+
+    async function enrichProductsChunk(listItems, chunk, idField, maps) {
+      const { infoByPid, infoByOffer, attrByPid, attrByOffer, priceByPid, priceByOffer, stocksByPid, stocksByOffer } = maps;
+      const useProductId = idField === 'product_id';
+      const infoBody = useProductId ? { product_id: chunk, sku: [] } : { offer_id: chunk };
+      const priceFilter = { filter: { [idField]: chunk, visibility: 'ALL' }, limit: 100 };
+      const priceSource = '/v5/product/info/prices';
+      const tasks = [
+        apiPost('/v3/product/info/list', infoBody),
+        apiPost(priceSource, priceFilter),
+      ];
+      if (useProductId) {
+        tasks.push(apiPost('/v4/product/info/attributes', { filter: { product_id: chunk }, limit: 100 }));
+        tasks.push(apiPost('/v4/product/info/stocks', { filter: { product_id: chunk, visibility: 'ALL' }, limit: 100 }));
+      }
+      const [info, pr, attrs, st] = await Promise.all(tasks);
+      if (info.ok) {
+        (info.data?.items || info.data?.result?.items || []).forEach((x) => {
+          const pid = String(x.product_id || x.id);
+          const offer = String(x.offer_id || '');
+          if (pid && pid !== 'undefined') infoByPid.set(pid, x);
+          if (offer) infoByOffer.set(offer, x);
+          const parsedInfo = parseInfoRow(x);
+          if (parsedInfo) {
+            if (pid && pid !== 'undefined') priceByPid.set(pid, parsedInfo);
+            if (offer) priceByOffer.set(offer, parsedInfo);
+          }
+        });
+      }
+      let prices = pr;
+      if (!prices.ok && idField === 'offer_id') {
+        prices = await apiPost(priceSource, { filter: { offer_id: chunk, visibility: 'ALL' }, limit: 100 });
+      }
+      if (prices.ok) {
+        (prices.data?.items || prices.data?.result?.items || []).forEach((row) => {
+          const pid = String(row.product_id);
+          const offer = String(row.offer_id || '');
+          const parsed = parsePriceRow(row);
+          parsed.tariffs.FBO.source = priceSource;
+          parsed.tariffs.FBS.source = priceSource;
+          const prevPid = priceByPid.get(pid);
+          const prevOffer = priceByOffer.get(offer);
+          if (pid && pid !== 'undefined') priceByPid.set(pid, mergeParsedPrice(prevPid, parsed));
+          if (offer) priceByOffer.set(offer, mergeParsedPrice(prevOffer, parsed));
+        });
+      }
+      if (useProductId && attrs?.ok) {
+        (attrs.data?.items || attrs.data?.result?.items || []).forEach((row) => {
+          const pid = String(row.product_id || row.id);
+          const offer = String(row.offer_id || '');
+          if (pid && pid !== 'undefined') attrByPid.set(pid, row);
+          if (offer) attrByOffer.set(offer, row);
+        });
+      }
+      if (useProductId && st?.ok) {
+        (st.data?.items || st.data?.result?.items || []).forEach((row) => {
+          const pid = String(row.product_id);
+          const offer = String(row.offer_id || '');
+          const qty = parseStocks(row);
+          if (pid && pid !== 'undefined') stocksByPid.set(pid, qty);
+          if (offer) stocksByOffer.set(offer, qty);
+        });
+      }
     }
 
     async function enrichProductsFromApi(listItems) {
       const productIds = listItems.map((i) => i.product_id).filter(Boolean);
       const offerIds = listItems.map((i) => i.offer_id).filter(Boolean);
-      const infoByPid = new Map();
-      const infoByOffer = new Map();
-      const attrByPid = new Map();
-      const attrByOffer = new Map();
-      const priceByPid = new Map();
-      const priceByOffer = new Map();
-      const stocksByPid = new Map();
-      const stocksByOffer = new Map();
+      const maps = {
+        infoByPid: new Map(),
+        infoByOffer: new Map(),
+        attrByPid: new Map(),
+        attrByOffer: new Map(),
+        priceByPid: new Map(),
+        priceByOffer: new Map(),
+        stocksByPid: new Map(),
+        stocksByOffer: new Map(),
+      };
       const ids = productIds.length ? productIds : offerIds;
       const idField = productIds.length ? 'product_id' : 'offer_id';
-      for (let i = 0; i < ids.length; i += 100) {
-        const chunk = ids.slice(i, i + 100);
-        const infoBody = productIds.length ? { product_id: chunk, sku: [] } : { offer_id: chunk };
-        const info = await apiPost('/v3/product/info/list', infoBody);
-        if (info.ok) {
-          (info.data?.items || info.data?.result?.items || []).forEach((x) => {
-            const pid = String(x.product_id || x.id);
-            const offer = String(x.offer_id || '');
-            if (pid && pid !== 'undefined') infoByPid.set(pid, x);
-            if (offer) infoByOffer.set(offer, x);
-            const parsedInfo = parseInfoRow(x);
-            if (parsedInfo) {
-              if (pid && pid !== 'undefined') priceByPid.set(pid, parsedInfo);
-              if (offer) priceByOffer.set(offer, parsedInfo);
-            }
-          });
+      const chunks = [];
+      for (let i = 0; i < ids.length; i += 100) chunks.push(ids.slice(i, i + 100));
+      for (let i = 0; i < chunks.length; i += ASSORT_ENRICH_CONCURRENCY) {
+        const batch = chunks.slice(i, i + ASSORT_ENRICH_CONCURRENCY);
+        const hint = $('assortHint');
+        if (hint && chunks.length > 1) {
+          hint.textContent = 'Детали товаров: ' + Math.min(100, Math.round(((i + batch.length) / chunks.length) * 100)) + '%…';
         }
-        let priceSource = '/v5/product/info/prices';
-        let pr = await apiPost(priceSource, { filter: { [idField]: chunk, visibility: 'ALL' }, limit: 100 });
-        if (!pr.ok && idField === 'offer_id') pr = await apiPost(priceSource, { filter: { offer_id: chunk, visibility: 'ALL' }, limit: 100 });
-        if (pr.ok) {
-          (pr.data?.items || pr.data?.result?.items || []).forEach((row) => {
-            const pid = String(row.product_id);
-            const offer = String(row.offer_id || '');
-            const parsed = parsePriceRow(row);
-            parsed.tariffs.FBO.source = priceSource;
-            parsed.tariffs.FBS.source = priceSource;
-            const prevPid = priceByPid.get(pid);
-            const prevOffer = priceByOffer.get(offer);
-            if (pid && pid !== 'undefined') priceByPid.set(pid, mergeParsedPrice(prevPid, parsed));
-            if (offer) priceByOffer.set(offer, mergeParsedPrice(prevOffer, parsed));
-          });
-        }
-        if (productIds.length) {
-          const attrs = await apiPost('/v4/product/info/attributes', { filter: { product_id: chunk }, limit: 100 });
-          if (attrs.ok) {
-            (attrs.data?.items || attrs.data?.result?.items || []).forEach((row) => {
-              const pid = String(row.product_id || row.id);
-              const offer = String(row.offer_id || '');
-              if (pid && pid !== 'undefined') attrByPid.set(pid, row);
-              if (offer) attrByOffer.set(offer, row);
-            });
-          }
-        }
-        if (productIds.length) {
-          const st = await apiPost('/v4/product/info/stocks', { filter: { product_id: chunk, visibility: 'ALL' }, limit: 100 });
-          if (st.ok) {
-            (st.data?.items || st.data?.result?.items || []).forEach((row) => {
-              const pid = String(row.product_id);
-              const offer = String(row.offer_id || '');
-              const qty = parseStocks(row);
-              if (pid && pid !== 'undefined') stocksByPid.set(pid, qty);
-              if (offer) stocksByOffer.set(offer, qty);
-            });
-          }
-        }
+        await Promise.all(batch.map((chunk) => enrichProductsChunk(listItems, chunk, idField, maps)));
       }
+      const { infoByPid, infoByOffer, attrByPid, attrByOffer, priceByPid, priceByOffer, stocksByPid, stocksByOffer } = maps;
       return listItems.map((it) => {
         const pid = String(it.product_id);
         const offer = String(it.offer_id || '');
@@ -2438,71 +2509,103 @@
       });
     }
 
-    async function loadAssortment() {
+    async function loadAssortment(opts) {
+      const force = !!(opts && opts.force);
+      const background = !!(opts && opts.background);
+      if (state.assortmentLoading && !force) return;
+      if (state.connected && state.assortmentLoaded && state.products.length && !force) {
+        renderAssortment();
+        return;
+      }
       let products = [];
       let fromApi = false;
       const showDemo = !state.connected && !hasUserApiCredentials();
+      const hadProducts = state.products.length > 0;
       if (state.connected) {
-        state.dataLoading = true;
-        renderAssortment();
-        setAppLoading(true, 'Загрузка ассортимента', 'Получаем товары из Ozon API…');
-        $('assortHint').textContent = 'Загружаю товары из Ozon API...';
+        state.assortmentLoading = true;
+        if (!hadProducts && !background) {
+          state.dataLoading = true;
+          renderAssortment();
+        }
+        setAssortRefreshing(true);
+        if (!background) {
+          setAppLoading(true, 'Загрузка ассортимента', 'Получаем товары из Ozon API…');
+        } else if (hadProducts) {
+          $('assortHint').textContent = 'Обновляю каталог в фоне…';
+        } else {
+          $('assortHint').textContent = 'Загружаю товары из Ozon API...';
+        }
         try {
           const listItems = await fetchAllProductListItems();
           if (listItems.length) {
             products = await enrichProductsFromApi(listItems);
             fromApi = products.length > 0;
             if (fromApi) {
+              saveAssortCache(products);
               $('assortHint').textContent = 'Загружено из Ozon API: ' + products.length + ' SKU';
             }
           }
         } catch (_) {
-          products = [];
+          if (!hadProducts) products = [];
         } finally {
           state.dataLoading = false;
+          state.assortmentLoading = false;
+          setAssortRefreshing(false);
+          if (!background) setAppLoading(false);
         }
       }
       if (!fromApi) {
+        if (hadProducts && background) {
+          renderAssortment();
+          return;
+        }
         if (showDemo) {
           products = DEMO_PRODUCTS.map(normalizeProduct);
           $('assortHint').textContent = 'Демо-товары (подключите API)';
-        } else {
+        } else if (!hadProducts) {
           products = [];
           $('assortHint').textContent = state.connected
             ? 'API не вернул товары' + (state.lastApiError ? ' · ' + state.lastApiError : '')
             : 'Подключите API для загрузки каталога';
+        } else {
+          renderAssortment();
+          return;
         }
       }
-      state.products = products;
-      renderAssortment();
+      if (fromApi || !hadProducts) {
+        applyAssortProducts(products, null);
+      }
     }
 
-    async function loadAllData() {
+    async function loadCategoryTree() {
       try {
-        setAppLoading(true, 'Загрузка данных', 'Категории Ozon…');
-        try {
-          const tree = await apiPost('/v1/description-category/tree', { language: 'RU' });
-          if (tree.ok) {
-            state.categoryTypes = flattenOzonTypes(tree.data?.result || tree.data?.categories || [], [])
-              .sort((a, b) => a.label.localeCompare(b.label, 'ru'));
-            initCategoryCombobox();
-          }
-        } catch (_) {}
-        setAppLoading(true, 'Загрузка данных', 'Комиссии и логистика…');
-        try {
-          await loadCommissionTable();
-        } catch (_) {}
-        try {
-          await loadLogisticsTable();
-        } catch (_) {}
-        setAppLoading(true, 'Загрузка данных', 'Тарифы и ассортимент…');
+        const tree = await apiPost('/v1/description-category/tree', { language: 'RU' });
+        if (tree.ok) {
+          state.categoryTypes = flattenOzonTypes(tree.data?.result || tree.data?.categories || [], [])
+            .sort((a, b) => a.label.localeCompare(b.label, 'ru'));
+          initCategoryCombobox();
+        }
+      } catch (_) {}
+    }
+
+    async function loadAllData(opts) {
+      const background = !!(opts && opts.background);
+      const skipAssort = !!(opts && opts.skipAssort);
+      try {
+        if (!background) setAppLoading(true, 'Загрузка данных', 'Справочники и тарифы…');
+        await Promise.all([
+          loadCategoryTree(),
+          loadCommissionTable().catch(() => {}),
+          loadLogisticsTable().catch(() => {}),
+        ]);
+        if (!background) setAppLoading(true, 'Загрузка данных', 'Тарифы и ассортимент…');
         try {
           await fetchTariff();
           recalc();
         } catch (_) {}
-        await loadAssortment();
+        if (!skipAssort) await loadAssortment({ background, force: !!opts?.forceAssort });
       } finally {
-        setAppLoading(false);
+        if (!background) setAppLoading(false);
       }
     }
 
@@ -2778,7 +2881,9 @@
       return result;
     }
 
-    async function connect() {
+    async function connect(opts) {
+      const background = !!(opts && opts.background);
+      const force = !!(opts && opts.force);
       const cid = $('clientId').value.trim();
       const key = $('apiKey').value.trim();
       const creds = apiCredentials();
@@ -2787,23 +2892,28 @@
       if (key) localStorage.setItem(LS_KEY, key);
       $('authError').classList.add('hidden');
       const btn = $('btnConnect');
-      const btnLabel = btn.textContent;
-      btn.disabled = true;
-      btn.textContent = 'Подключение…';
-      state.apiOk = false;
-      state.apiLog = [];
-      setAppLoading(true, 'Подключение к Ozon', 'Проверяем API-ключ…');
+      const btnLabel = btn?.textContent || 'Подключить';
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = background ? btnLabel : 'Подключение…';
+      }
+      if (!background) {
+        state.apiOk = false;
+        state.apiLog = [];
+      }
+      if (!background) setAppLoading(true, 'Подключение к Ozon', 'Проверяем API-ключ…');
       try {
         const { ok, status, raw } = await testOzonConnection();
         if (status === 401 || status === 403) {
           setStatus(false);
+          state.assortmentLoaded = false;
           showAuthError('Неверный Client-ID или API-Key');
-          setAppLoading(false);
+          if (!background) setAppLoading(false);
           return;
         }
         if (!ok) {
           setStatus(false);
-          setAppLoading(false);
+          if (!background) setAppLoading(false);
           if (status === 503) {
             showAuthError(
               (raw?.error || raw?.message || 'Нет доступа к Google Таблице Users.') +
@@ -2816,26 +2926,32 @@
           return;
         }
         setStatus(true);
-        state.dataLoading = true;
-        renderAssortment();
-        $('assortHint').textContent = 'Загружаю каталог и таблицу комиссий…';
+        $('btnAssortRefresh')?.classList.remove('hidden');
+        const skipAssort = !force && background && state.assortmentLoaded && state.products.length > 0;
+        if (!skipAssort && !background && !state.products.length) {
+          state.dataLoading = true;
+          renderAssortment();
+        }
+        if (!skipAssort) $('assortHint').textContent = background ? 'Обновляю данные…' : 'Загружаю каталог и таблицу комиссий…';
         try {
-          await loadAllData();
+          await loadAllData({ background, skipAssort, forceAssort: force });
         } catch (err) {
-          showAuthError(err?.message || String(err));
+          if (!background) showAuthError(err?.message || String(err));
         } finally {
           state.dataLoading = false;
         }
         return;
       } catch (e) {
         setStatus(false);
-        showAuthError(e?.message || String(e));
+        if (!background) showAuthError(e?.message || String(e));
       } finally {
         state.dataLoading = false;
-        renderAssortment();
-        setAppLoading(false);
-        btn.disabled = false;
-        btn.textContent = btnLabel;
+        if (!state.assortmentLoaded) renderAssortment();
+        if (!background) setAppLoading(false);
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = btnLabel;
+        }
       }
     }
 
@@ -3629,7 +3745,8 @@
       updateDashTaxInfo();
       if (state.dashboard.data) renderDashTaxEst(state.dashboard.data.current.totals);
     }
-    async function loadDashboard() {
+    async function loadDashboard(opts) {
+      const force = !!(opts && opts.force);
       if (!state.connected) {
         dashSetStatus('Подключите Ozon Seller API наверху страницы', true);
         return;
@@ -3640,6 +3757,13 @@
         dashSetStatus('Укажите корректный период', true);
         return;
       }
+      const periodKey = from + '|' + to;
+      if (!force && state.dashboard.loaded && state.dashboard.periodKey === periodKey && state.dashboard.data) {
+        renderDashboard(state.dashboard.data);
+        dashSetStatus('Из кэша · ' + new Date().toLocaleString('ru-RU'), false);
+        return;
+      }
+      if (state.dashboard.loading) return;
       localStorage.setItem(LS_DASH_FROM, from);
       localStorage.setItem(LS_DASH_TO, to);
       updateDashPeriodLabel();
@@ -3670,6 +3794,8 @@
             opTypes: opBreakdown.opTypes || opBreakdown || [],
           },
         };
+        state.dashboard.data = payload;
+        state.dashboard.periodKey = periodKey;
         renderDashboard(payload);
         state.dashboard.loaded = true;
         dashSetStatus('Обновлено ' + new Date().toLocaleString('ru-RU'), false);
@@ -3691,17 +3817,35 @@
       updateDashTaxInfo();
     }
 
+    function switchTab(id) {
+      document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === id));
+      document.querySelectorAll('.tab-panel').forEach((p) => {
+        const on = p.id === id;
+        p.classList.toggle('active', on);
+        if (on && !state.tabsVisited[id]) {
+          p.classList.add('tab-panel--animate');
+          state.tabsVisited[id] = true;
+        } else {
+          p.classList.remove('tab-panel--animate');
+        }
+      });
+      if (id === 'tab-analytics' && state.connected) {
+        const from = $('dashDateFrom')?.value;
+        const to = $('dashDateTo')?.value;
+        const periodKey = from && to ? from + '|' + to : '';
+        if (state.dashboard.data && state.dashboard.periodKey === periodKey) {
+          renderDashboard(state.dashboard.data);
+        } else if (!state.dashboard.loading) {
+          loadDashboard().catch(() => {});
+        }
+      }
+    }
+
     function initTabs() {
       document.querySelectorAll('.tab-btn').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const id = btn.dataset.tab;
-          document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b === btn));
-          document.querySelectorAll('.tab-panel').forEach((p) => p.classList.toggle('active', p.id === id));
-          if (id === 'tab-analytics' && state.connected && !state.dashboard.loading && !state.dashboard.loaded) {
-            loadDashboard().catch(() => {});
-          }
-        });
+        btn.addEventListener('click', () => switchTab(btn.dataset.tab));
       });
+      state.tabsVisited['tab-calc'] = true;
     }
 
     function setTaxSystem(system, overwriteRate) {
@@ -3763,18 +3907,17 @@
         refreshDashTaxFromSettings();
       });
       initDashDates();
-      $('btnDashLoad')?.addEventListener('click', () => loadDashboard());
+      $('btnDashLoad')?.addEventListener('click', () => loadDashboard({ force: true }));
+      $('btnAssortRefresh')?.addEventListener('click', () => loadAssortment({ force: true }).catch(() => {}));
       document.querySelectorAll('.dash-preset').forEach((b) => {
         b.addEventListener('click', () => {
           applyDashPreset(b.dataset.preset);
-          state.dashboard.loaded = false;
-          loadDashboard().catch(() => {});
+          loadDashboard({ force: true }).catch(() => {});
         });
       });
       ['dashDateFrom', 'dashDateTo'].forEach((id) => {
         $(id)?.addEventListener('change', () => {
           updateDashPeriodLabel();
-          state.dashboard.loaded = false;
         });
       });
       $('catComboBtn').addEventListener('click', (e) => {
@@ -3842,7 +3985,18 @@
         loadCommissionTable().catch(() => {});
         loadLogisticsTable().catch(() => {});
         if (cid && key) {
-          await connect();
+          const cached = loadAssortCache();
+          if (cached?.length) {
+            state.connected = true;
+            setStatus(true);
+            applyAssortProducts(
+              cached.map((p) => normalizeProduct(p)),
+              'Из кэша: ' + cached.length + ' SKU · обновляем в фоне…'
+            );
+            connect({ background: true }).catch(() => {});
+          } else {
+            await connect();
+          }
         } else {
           await loadAssortment();
           schedule();
