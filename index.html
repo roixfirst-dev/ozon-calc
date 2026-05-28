@@ -861,6 +861,7 @@
     const LS_DASH_FROM = 'ozon_ue_dash_from';
     const LS_DASH_TO = 'ozon_ue_dash_to';
     const LS_ASSORT_SORT = 'ozon_ue_assort_sort';
+    const LS_ACTIVE_TAB = 'ozon_ue_active_tab';
     const LS_ASSORT_CACHE = 'ozon_ue_assort_cache_v1';
     const ASSORT_CACHE_TTL_MS = 45 * 60 * 1000;
     const ASSORT_ENRICH_CONCURRENCY = 3;
@@ -880,7 +881,7 @@
       logisticsTables: { FBS: null, FBO: null }, logisticsReady: false, logisticsError: '',
       categoryTypeById: new Map(),
       assortSearch: '', assortSort: 'default', dataLoading: false,
-      assortmentLoaded: false, assortmentLoading: false, productListPath: '',
+      assortmentLoaded: false, assortmentLoading: false, assortmentDomBuilt: false, productListPath: '',
       dashboard: { loading: false, loaded: false, periodKey: '', data: null, charts: {} },
       tabsVisited: {},
       subscriptionBlocked: false,
@@ -921,11 +922,9 @@
       return $('localDelivery')?.checked ?? localStorage.getItem(LS_LOCAL_DELIVERY) === '1';
     }
     function dashPeriodNet(balance, totals) {
-      const balanceNet = balance ? ozonBalanceNet(balance) : 0;
-      if (!totals) return balanceNet;
-      const totalsNet = sumFinanceTotals(totals);
-      if (!balance || Math.abs(totalsNet - balanceNet) > 50) return totalsNet;
-      return balanceNet;
+      if (balance) return ozonBalanceNet(balance);
+      if (totals) return sumFinanceTotals(totals);
+      return 0;
     }
     function daysBetweenYmd(fromYmd, toYmd) {
       const a = new Date(fromYmd + 'T12:00:00');
@@ -933,33 +932,36 @@
       return Math.max(0, Math.round((b - a) / 86400000));
     }
     function pickCashFlowsForRange(flows, fromYmd, toYmd) {
-      const norm = (f) => ({
+      const norm = (flows || []).map((f) => ({
         b: String(f.period?.begin || '').slice(0, 10),
         e: String(f.period?.end || '').slice(0, 10),
         flow: f,
-      });
-      const list = (flows || []).map(norm).filter((x) => x.b && x.e);
-      if (!list.length) return flows || [];
-      const exact = list.filter((x) => x.b === fromYmd && x.e === toYmd);
-      if (exact.length) return exact.map((x) => x.flow);
-      const inside = list.filter((x) => x.b >= fromYmd && x.e <= toYmd);
-      if (inside.length === 1) return [inside[0].flow];
-      if (inside.length > 1) {
-        inside.sort((a, b) => daysBetweenYmd(a.b, a.e) - daysBetweenYmd(b.b, b.e));
-        return [inside[0].flow];
-      }
-      const enclosing = list.filter((x) => x.b <= fromYmd && x.e >= toYmd);
-      if (enclosing.length) {
+      })).filter((x) => x.b && x.e);
+      if (!norm.length) return flows || [];
+      const dedupe = (items) => {
+        const seen = new Set();
+        const out = [];
+        for (const x of items) {
+          const k = x.b + '|' + x.e;
+          if (seen.has(k)) continue;
+          seen.add(k);
+          out.push(x.flow);
+        }
+        return out;
+      };
+      const exact = norm.filter((x) => x.b === fromYmd && x.e === toYmd);
+      if (exact.length) return dedupe(exact);
+      const inside = norm.filter((x) => x.b >= fromYmd && x.e <= toYmd);
+      if (inside.length) return dedupe(inside.sort((a, b) => a.b.localeCompare(b.b)));
+      const enclosing = norm.filter((x) => x.b <= fromYmd && x.e >= toYmd);
+      if (enclosing.length === 1) return [enclosing[0].flow];
+      if (enclosing.length > 1) {
         enclosing.sort((a, b) => daysBetweenYmd(a.b, a.e) - daysBetweenYmd(b.b, b.e));
         return [enclosing[0].flow];
       }
-      const overlap = list.filter((x) => x.b <= toYmd && x.e >= fromYmd);
-      if (overlap.length === 1) return [overlap[0].flow];
-      if (overlap.length > 1) {
-        overlap.sort((a, b) => daysBetweenYmd(a.b, a.e) - daysBetweenYmd(b.b, b.e));
-        return [overlap[0].flow];
-      }
-      return flows;
+      const overlap = norm.filter((x) => x.b <= toYmd && x.e >= fromYmd);
+      if (overlap.length) return dedupe(overlap.sort((a, b) => a.b.localeCompare(b.b)));
+      return dedupe(norm);
     }
     function valueOrFallback(value, fallback) {
       return value === null || value === undefined || value === '' ? fallback : Number(value);
@@ -2900,11 +2902,16 @@
       reorderAssortCards();
     }
 
-    function renderAssortment() {
+    function renderAssortment(opts) {
+      const soft = !!(opts && opts.soft);
       const list = $('assortList');
       if (!list) return;
-      list.innerHTML = '';
+      if (soft && state.assortmentDomBuilt && state.products.length && !state.dataLoading) {
+        recalcAllAssortRows();
+        return;
+      }
       if (state.dataLoading && !state.products.length) {
+        list.innerHTML = '';
         for (let i = 0; i < 4; i++) {
           const card = document.createElement('article');
           card.className = 'assort-card assort-card--skeleton';
@@ -2913,8 +2920,10 @@
             '<div class="mt-3 grid grid-cols-3 gap-2"><span class="skel skel--sm"></span><span class="skel skel--sm"></span><span class="skel skel--sm"></span></div>';
           list.appendChild(card);
         }
+        state.assortmentDomBuilt = false;
         return;
       }
+      list.innerHTML = '';
       const visible = sortAssortProducts(filteredProducts());
       if (!state.products.length) {
         list.innerHTML = '<p class="py-8 text-center text-sm text-slate-500">Товары не получены. Проверьте ключи API и нажмите «Подключить».</p>';
@@ -3013,6 +3022,7 @@
         });
       });
       state.products.forEach((p) => recalcRow(p.offer_id));
+      state.assortmentDomBuilt = state.products.length > 0;
     }
 
     function escapeHtml(s) {
@@ -3279,17 +3289,21 @@
       if (/utiliz|штраф|ошибок|индекс|penalt|fine|disposal|нерекоменд/i.test(n)) return 'Другие услуги и штрафы';
       if (/временн|партн|эквайр|acquiring|partner/i.test(n)) return 'Услуги партнёров';
       if (/клик|marketing|продвиж|реклам|click|costoperation/i.test(n)) return 'Продвижение и реклама';
-      if (/размещ|storage|склад|fbo/i.test(n)) return 'Услуги FBO';
-      if (/достав|delivery|логист|magistral|курьер|fulfillment|dropoff/i.test(n)) return 'Услуги доставки';
+      if (/размещ|storage|склад|fbo|warehouse|вывоз/i.test(n)) return 'Услуги FBO';
+      if (/достав|delivery|логист|magistral|курьер|fulfillment|dropoff|handover|movement/i.test(n)) return 'Услуги доставки';
+      if (/package|material|упаков/i.test(n)) return 'Услуги партнёров';
       return 'Прочие начисления';
     }
     function buildLcBreakdown(balance, detailStore) {
       const orders = Number(balance?.orders_amount) || 0;
       const returns = Number(balance?.returns_amount) || 0;
-      const salesTotal = orders + returns;
+      const comm = Number(balance?.commission_amount) || 0;
+      const services = Number(balance?.services_amount) || 0;
+      const delivery = Number(balance?.item_delivery_and_return_amount) || 0;
       const salesLines = [];
+      const returnsLines = [];
+      const accrualDetail = [];
       const d = detailStore?.det || {};
-      if (d.deliveryAmount) salesLines.push(['Выручка', d.deliveryAmount]);
       const salesFromServices = new Map();
       const accrualFromServices = new Map();
       if (detailStore?.serviceItems) {
@@ -3302,17 +3316,15 @@
           }
         });
       }
+      if (d.deliveryAmount) salesLines.push(['Выручка', d.deliveryAmount]);
       salesFromServices.forEach((v, k) => salesLines.push([k, v]));
-      if (d.returnAmount && !salesLines.some((x) => x[0].includes('Возврат'))) {
-        salesLines.push(['Возвраты (отчёт)', d.returnAmount]);
-      }
-      if (!salesLines.length) {
-        if (orders) salesLines.push(['Продажи', orders]);
-        if (returns) salesLines.push(['Возвраты', returns]);
-      }
+      if (!salesLines.length && orders) salesLines.push(['Продажи', orders]);
+      if (returns) returnsLines.push(['Возвраты', returns]);
+      else if (d.returnAmount) returnsLines.push(['Возврат выручки', d.returnAmount]);
       const accrualLines = [];
-      const comm = Number(balance?.commission_amount) || 0;
       if (comm) accrualLines.push(['Вознаграждение Ozon', comm]);
+      if (delivery) accrualLines.push(['Услуги доставки', delivery]);
+      if (services) accrualLines.push(['Продвижение, FBO и прочие услуги', services]);
       const lcOrder = [
         'Другие услуги и штрафы',
         'Услуги партнёров',
@@ -3323,20 +3335,21 @@
       ];
       lcOrder.forEach((label) => {
         const v = accrualFromServices.get(label);
-        if (v) accrualLines.push([label, v]);
+        if (v) accrualDetail.push([label, v]);
       });
-      const deliveryBal = Number(balance?.item_delivery_and_return_amount) || 0;
-      if (deliveryBal && !accrualLines.some((x) => x[0] === 'Услуги доставки')) {
-        accrualLines.push(['Услуги доставки', deliveryBal]);
-      }
-      const accrualTotal = accrualLines.reduce((s, [, v]) => s + (Number(v) || 0), 0);
+      const salesBlockTotal = orders;
+      const returnsBlockTotal = returns;
+      const accrualTotal = comm + delivery + services;
       const salesSubtotal = salesLines.reduce((s, [, v]) => s + (Number(v) || 0), 0);
       return {
-        salesTotal,
+        salesBlockTotal,
+        returnsBlockTotal,
         salesLines,
+        returnsLines,
         salesSubtotal,
         accrualTotal,
         accrualLines,
+        accrualDetail,
         total: ozonBalanceNet(balance),
       };
     }
@@ -3506,6 +3519,9 @@
         pageCount = Number(result.page_count) || 1;
         const list = result.cash_flows || [];
         flows.push(...list);
+        for (const flow of list) {
+          if (flow.details) ingestCashFlowDetails(detailStore, flow.details);
+        }
         const details = result.details;
         if (details) ingestCashFlowDetails(detailStore, details);
         page += 1;
@@ -3696,11 +3712,32 @@
       }
       return out.sort((a, b) => b.value - a.value);
     }
+    const OZON_SERVICE_RU = {
+      'product movement from warehouse': 'Вывоз товара со склада',
+      'delivery to handover place ozon': 'Доставка до места выдачи силами Ozon',
+      'delivery to handover place': 'Доставка до места выдачи',
+      'package materials provision': 'Материалы для упаковки',
+      'marketplaceserviceitemdirectflowlogistic': 'Магистраль / логистика',
+      'marketplaceserviceitemreturnflowlogistic': 'Обратная логистика',
+      'marketplaceserviceitemdelivtocustomer': 'Доставка покупателю',
+      'marketplaceserviceitemdropoff': 'Обработка Drop-off',
+      'marketplaceserviceitempickup': 'Обработка Pick-up',
+      'marketplaceservicestorage': 'Хранение',
+      'marketplaceserviceitemfulfillment': 'Обработка отправлений',
+      'marketplaceserviceitemredistribution': 'Сортировка и перемещение',
+    };
     function prettyOzonServiceName(name) {
-      const raw = String(name || 'Услуга Ozon').trim();
-      const lower = raw.toLowerCase();
+      let raw = String(name || 'Услуга Ozon').trim();
+      raw = raw.replace(/^(Доставка|Возврат|Прочее):\s*/i, '');
+      const lower = raw.toLowerCase().replace(/\s+/g, ' ');
+      if (OZON_SERVICE_RU[lower]) return OZON_SERVICE_RU[lower];
+      const compact = lower.replace(/[^a-z0-9а-яё]/gi, '');
+      if (OZON_SERVICE_RU[compact]) return OZON_SERVICE_RU[compact];
       const rules = [
         [/disposal|utiliz|утилиз/i, 'Утилизация товара'],
+        [/product\s*movement|movement\s*from\s*warehouse|вывоз/i, 'Вывоз товара со склада'],
+        [/handover\s*place|to\s*handover/i, 'Доставка до места выдачи'],
+        [/package\s*materials|materials\s*provision/i, 'Материалы для упаковки'],
         [/directflowlogistic|directflowtrans|магистрал/i, 'Магистраль / логистика'],
         [/returnflowlogistic|returnflowtrans|returnnotdeliv|returnafterdeliv|returnpartgoods|возврат/i, 'Обратная логистика / возвраты'],
         [/delivt[o]?customer|lastmile|courier|достав/i, 'Доставка покупателю'],
@@ -4020,20 +4057,24 @@
         const cls = v < 0 ? 'text-red-600' : 'text-slate-800';
         return '<div class="flex justify-between gap-2 py-0.5' + (bold ? ' font-semibold' : '') + '"><span class="' + (bold ? '' : 'text-slate-600 pl-2') + '">' + label + '</span><span class="' + cls + '">' + rub(v) + '</span></div>';
       };
-      html += row('Продажи и возвраты', lc.salesTotal, true);
-      lc.salesLines.forEach(([label, val]) => {
-        html += row(label, val, false);
-      });
-      if (Math.abs(lc.salesSubtotal - lc.salesTotal) > 1) {
-        html += '<p class="pl-2 text-[10px] text-slate-400">Сумма строк: ' + rub(lc.salesSubtotal) + '</p>';
+      if (lc.salesBlockTotal || lc.salesLines?.length) {
+        html += row('Продажи', lc.salesBlockTotal, true);
+        (lc.salesLines || []).forEach(([label, val]) => { html += row(label, val, false); });
+      }
+      if (lc.returnsBlockTotal || lc.returnsLines?.length) {
+        html += row('Возвраты', lc.returnsBlockTotal, true);
+        (lc.returnsLines || []).forEach(([label, val]) => { html += row(label, val, false); });
       }
       html += '<div class="my-2 border-t border-slate-100"></div>';
       html += row('Начисления', lc.accrualTotal, true);
-      lc.accrualLines.forEach(([label, val]) => {
-        html += row(label, val, false);
-      });
+      (lc.accrualLines || []).forEach(([label, val]) => { html += row(label, val, false); });
+      (lc.accrualDetail || []).forEach(([label, val]) => { html += row(label, val, false); });
       html += '<div class="my-2 border-t border-slate-100"></div>';
       html += row('Итого за период', lc.total, true);
+      const partsSum = (lc.salesBlockTotal || 0) + (lc.returnsBlockTotal || 0) + (lc.accrualTotal || 0);
+      if (Math.abs(partsSum - lc.total) > 1) {
+        html += '<p class="text-[10px] text-slate-400">Сверка: продажи + возвраты + начисления = ' + rub(partsSum) + '</p>';
+      }
       return html;
     }
     function renderDashFinance(balance, totals, lcBreakdown) {
@@ -4041,7 +4082,7 @@
       if (!el) return;
       let html = '';
       if (lcBreakdown && (lcBreakdown.total !== 0 || dashPeriodNet(balance, totals) !== 0)) {
-        const lcView = { ...lcBreakdown, total: dashPeriodNet(balance, totals) };
+        const lcView = { ...lcBreakdown, total: ozonBalanceNet(balance) || dashPeriodNet(balance, totals) };
         html += renderLcFinanceSection(lcView);
         html += '<p class="mt-3 text-[11px] text-slate-400">Детализация по услугам и типам операций — в блоках ниже.</p>';
       } else if (balance && ozonBalanceNet(balance) !== 0) {
@@ -4108,9 +4149,10 @@
         : serviceSource === 'transactions'
           ? '<p class="mb-2 text-xs text-amber-600">Ozon не отдал подробный отчёт услуг за период — показываю услуги из транзакций.</p>'
           : '<p class="mb-2 text-xs text-amber-600">Ozon не отдал детализацию услуг — показываю ненулевые итоговые расходы.</p>';
-      el.innerHTML = note + services.slice(0, 40).map(([name, price]) =>
-        '<div class="flex justify-between gap-2 border-b border-slate-50 py-1"><span class="text-slate-600">' + name + '</span><span class="font-medium ' + (price < 0 ? 'text-red-600' : '') + '">' + rub(price) + '</span></div>'
-      ).join('');
+      el.innerHTML = note + services.slice(0, 40).map(([name, price]) => {
+        const label = prettyOzonServiceName(name);
+        return '<div class="flex justify-between gap-2 border-b border-slate-50 py-1"><span class="text-slate-600">' + escapeHtml(label) + '</span><span class="font-medium ' + (price < 0 ? 'text-red-600' : '') + '">' + rub(price) + '</span></div>';
+      }).join('');
     }
     function renderDashOpTypes(ops) {
       const el = $('dashOpTypes');
@@ -4227,7 +4269,9 @@
       updateDashTaxInfo();
     }
 
-    function switchTab(id) {
+    function switchTab(id, opts) {
+      if (!id || !document.getElementById(id)) return;
+      try { sessionStorage.setItem(LS_ACTIVE_TAB, id); } catch (_) { /* ignore */ }
       document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === id));
       document.querySelectorAll('.tab-panel').forEach((p) => {
         const on = p.id === id;
@@ -4239,8 +4283,12 @@
           p.classList.remove('tab-panel--animate');
         }
       });
-      if (id === 'tab-assort' && state.products.length && !state.dataLoading) {
-        renderAssortment();
+      if (id === 'tab-assort') {
+        if (state.products.length && !state.dataLoading) {
+          renderAssortment({ soft: true });
+        } else if (state.connected && !state.assortmentLoading && !state.assortmentLoaded) {
+          loadAssortment({ background: true }).catch(() => {});
+        }
       }
       if (id === 'tab-analytics' && state.connected) {
         const from = $('dashDateFrom')?.value;
@@ -4256,9 +4304,20 @@
 
     function initTabs() {
       document.querySelectorAll('.tab-btn').forEach((btn) => {
-        btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          switchTab(btn.dataset.tab);
+        });
       });
-      state.tabsVisited['tab-calc'] = true;
+      let saved = '';
+      try { saved = sessionStorage.getItem(LS_ACTIVE_TAB) || ''; } catch (_) { /* ignore */ }
+      if (saved && saved !== 'tab-calc' && document.getElementById(saved)) {
+        state.tabsVisited['tab-calc'] = true;
+        switchTab(saved);
+      } else {
+        state.tabsVisited['tab-calc'] = true;
+      }
     }
 
     function setTaxSystem(system, overwriteRate) {
