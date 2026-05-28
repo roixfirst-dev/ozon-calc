@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
   <title>FinSeller — карманный финансовый директор для продавца</title>
-  <link rel="icon" href="finseller-logo2.png" type="image/png" sizes="32x32" />
-  <link rel="apple-touch-icon" href="finseller-logo2.png" />
+  <link rel="icon" href="finseller-icon2.png" type="image/png" sizes="32x32" />
+  <link rel="apple-touch-icon" href="finseller-icon2.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -242,21 +242,51 @@
     }
 
     .dash-charts-panel {
-      background: linear-gradient(160deg, #1a1f27 0%, #12151a 55%, #0f1115 100%);
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--fs-glass-border);
+      background: linear-gradient(155deg, rgba(255, 255, 255, 0.88) 0%, rgba(248, 250, 252, 0.78) 45%, rgba(237, 233, 254, 0.55) 100%);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      box-shadow: var(--fs-shadow);
     }
+    .dash-charts-panel::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(ellipse 70% 55% at 100% 0%, rgba(139, 92, 246, 0.12), transparent 55%),
+        radial-gradient(ellipse 55% 45% at 0% 100%, rgba(34, 211, 238, 0.1), transparent 50%),
+        radial-gradient(ellipse 40% 35% at 50% 0%, rgba(236, 72, 153, 0.06), transparent 45%);
+    }
+    .dash-charts-panel > * { position: relative; z-index: 1; }
     .dash-chart-card {
-      background: linear-gradient(145deg, rgba(38, 44, 54, 0.55) 0%, rgba(22, 26, 32, 0.9) 100%);
-      border: 1px solid rgba(255, 255, 255, 0.07);
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid rgba(139, 92, 246, 0.14);
       border-radius: 1.25rem;
       padding: 1rem 1.1rem 1.15rem;
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      box-shadow: 0 4px 24px rgba(139, 92, 246, 0.07), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+      transition: transform 0.28s ease, box-shadow 0.28s ease, border-color 0.28s ease;
     }
-    .dash-chart-card__title { color: #e2e8f0; font-size: 0.875rem; font-weight: 600; margin-bottom: 0.75rem; }
+    .dash-chart-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(139, 92, 246, 0.28);
+      box-shadow: 0 14px 36px rgba(139, 92, 246, 0.14), inset 0 1px 0 rgba(255, 255, 255, 1);
+    }
+    .dash-chart-card__title {
+      font-size: 0.875rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      letter-spacing: -0.01em;
+      background: linear-gradient(90deg, var(--fs-violet-dark), var(--fs-pink));
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
     .dash-chart-wrap { position: relative; height: 260px; width: 100%; }
     @media (min-width: 1024px) { .dash-chart-wrap--tall { height: 300px; } }
-    .dash-chart-empty { color: #64748b; font-size: 0.8125rem; text-align: center; padding: 2.5rem 1rem; }
+    .dash-chart-empty { color: var(--fs-muted); font-size: 0.8125rem; text-align: center; padding: 2.5rem 1rem; }
     .cat-option:hover, .cat-option.focus { background: rgba(139, 92, 246, 0.12); }
     .cat-option[aria-selected="true"] { background: var(--fs-violet); color: #fff; }
     body.paywall-locked main,
@@ -443,7 +473,7 @@
     <div class="flex w-full min-w-0 flex-wrap items-center justify-between gap-3 px-3 py-3 sm:px-4 sm:py-4">
       <div class="flex min-w-0 items-center gap-3">
         <div class="logo-wrap">
-          <img src="finseller-logo2.png" alt="FinSeller" width="52" height="52" class="app-icon shrink-0" onerror="this.onerror=null;this.src='finseller-icon2.png'" />
+          <img src="finseller-icon2.png" alt="FinSeller" width="52" height="52" class="app-icon shrink-0" onerror="this.onerror=null;this.src='assets/finseller-icon.png'" />
         </div>
         <div class="min-w-0">
           <h1 class="brand-title text-base leading-tight sm:text-lg">FinSeller</h1>
@@ -673,7 +703,7 @@
         <div id="dashKpis" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"></div>
         <div id="dashCompare" class="fs-panel hidden border-violet-200/60 bg-gradient-to-br from-violet-50/80 to-cyan-50/50 p-4 text-sm"></div>
         <div class="dash-charts-panel rounded-2xl p-4 sm:p-6">
-          <h3 class="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Диаграммы</h3>
+          <h3 class="fs-panel-title mb-4">Диаграммы</h3>
           <div class="grid gap-4 lg:grid-cols-2 lg:gap-5">
             <div class="dash-chart-card">
               <p class="dash-chart-card__title">Выручка и заказы по дням</p>
@@ -695,7 +725,8 @@
         </div>
         <div class="grid gap-4 lg:grid-cols-2">
           <div class="fs-panel p-4 sm:p-5">
-            <h3 class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Движение денег (Ozon)</h3>
+            <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Доходы и расходы (как в балансе Ozon)</h3>
+            <p class="mb-3 text-[11px] text-slate-400">Финансовый отчёт Ozon · те же строки, что «Начислено за период» в ЛК</p>
             <div id="dashFinance" class="space-y-2 text-sm"></div>
           </div>
           <div class="fs-panel p-4 sm:p-5">
@@ -705,16 +736,19 @@
           </div>
         </div>
         <div class="fs-panel p-4 sm:p-5">
-          <h3 class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Продажи по дням</h3>
+          <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Продажи по дням (аналитика)</h3>
+          <p class="mb-3 text-[11px] text-slate-400">Выручка из /v1/analytics/data — может отличаться от «Продажи» в балансе</p>
           <div id="dashAnalytics" class="overflow-x-auto text-sm"></div>
         </div>
         <div class="grid gap-4 lg:grid-cols-2">
           <div class="fs-panel p-4 sm:p-5">
-            <h3 class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Услуги Ozon (отчёт)</h3>
+            <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Детализация услуг (как таблица начислений)</h3>
+            <p class="mb-3 text-[11px] text-slate-400">Строки из фин. отчёта Ozon · сверяйте с «Группа услуг» в ЛК</p>
             <div id="dashServices" class="max-h-80 overflow-y-auto text-sm"></div>
           </div>
           <div class="fs-panel p-4 sm:p-5">
-            <h3 class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Типы операций</h3>
+            <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Операции по типам</h3>
+            <p class="mb-3 text-[11px] text-slate-400">Сводка из /v3/finance/transaction/list · крупные суммы как −7 340 ₽</p>
             <div id="dashOpTypes" class="max-h-80 overflow-y-auto text-sm"></div>
           </div>
         </div>
@@ -728,7 +762,7 @@
     <div class="global-loader__card">
       <div class="global-loader__visual">
         <span class="global-loader__ring" aria-hidden="true"></span>
-        <img src="finseller-logo2.png" alt="" class="global-loader__logo" width="80" height="80" onerror="this.onerror=null;this.src='finseller-icon2.png'" />
+        <img src="finseller-icon2.png" alt="" class="global-loader__logo" width="80" height="80" onerror="this.onerror=null;this.src='assets/finseller-icon.png'" />
       </div>
       <p id="globalLoaderTitle" class="global-loader__text">Загрузка<span class="global-loader__dots"></span></p>
       <p id="globalLoaderSub" class="global-loader__sub"></p>
@@ -738,7 +772,7 @@
   <div id="paywallModal" class="fixed inset-0 z-[200] hidden items-center justify-center bg-slate-900/75 p-4 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="paywallTitle">
     <div class="paywall-card w-full max-w-lg rounded-3xl p-6 sm:p-8">
       <div class="mb-5 text-center">
-        <img src="assets/finseller-logo.png" alt="FinSeller" class="paywall-logo" width="72" height="72" onerror="this.onerror=null;this.src='finseller-icon2.png'" />
+        <img src="finseller-icon2.png" alt="FinSeller" class="paywall-logo" width="72" height="72" onerror="this.onerror=null;this.src='assets/finseller-icon.png'" />
         <h2 id="paywallTitle" class="text-xl font-bold text-slate-900">Доступ ограничен</h2>
         <p class="mt-2 text-sm text-slate-600">Ваш бесплатный период (7 дней) или оплаченная подписка завершились.</p>
       </div>
@@ -2971,7 +3005,7 @@
     }
 
     const FIN_TOTAL_KEYS = [
-      ['accruals_for_sale', 'Начисления за продажи', false],
+      ['accruals_for_sale', 'Начисления за продажи (API totals)', false],
       ['sale_commission', 'Комиссия за продажу', true],
       ['processing_and_delivery', 'Обработка и доставка', true],
       ['refunds_and_cancellations', 'Возвраты и отмены', true],
@@ -2979,6 +3013,13 @@
       ['compensation_amount', 'Компенсации', false],
       ['money_transfer', 'Переводы', true],
       ['others_amount', 'Прочее', true],
+    ];
+    const OZON_BALANCE_ROWS = [
+      ['orders_amount', 'Продажи'],
+      ['returns_amount', 'Возвраты'],
+      ['commission_amount', 'Вознаграждение Ozon'],
+      ['services_amount', 'Услуги и реклама'],
+      ['item_delivery_and_return_amount', 'Логистика FBO/FBS'],
     ];
     const OP_TYPE_RU = {
       OperationAgentDeliveredToCustomer: 'Доставлено покупателю',
@@ -3046,6 +3087,132 @@
       }
       return chunks;
     }
+    function emptyOzonBalance() {
+      return {
+        orders_amount: 0,
+        returns_amount: 0,
+        commission_amount: 0,
+        services_amount: 0,
+        item_delivery_and_return_amount: 0,
+      };
+    }
+    function ozonBalanceNet(b) {
+      if (!b) return 0;
+      return OZON_BALANCE_ROWS.reduce((s, [k]) => s + (Number(b[k]) || 0), 0);
+    }
+    function mergeOzonBalance(acc, flow) {
+      if (!flow) return acc;
+      for (const [k] of OZON_BALANCE_ROWS) acc[k] = (acc[k] || 0) + (Number(flow[k]) || 0);
+      return acc;
+    }
+    function flowOverlapsRange(flow, fromYmd, toYmd) {
+      const p = flow?.period;
+      if (!p?.begin || !p?.end) return true;
+      const begin = String(p.begin).slice(0, 10);
+      const end = String(p.end).slice(0, 10);
+      return begin <= toYmd && end >= fromYmd;
+    }
+    function emptyCashFlowDetailsStore() {
+      return { det: {}, serviceItems: new Map() };
+    }
+    function ingestCashFlowDetailItems(store, items, prefix) {
+      if (!items) return;
+      const list = Array.isArray(items) ? items : [];
+      for (const it of list) {
+        const name = (prefix || '') + (it.name || 'Услуга');
+        const price = Number(it.price) || 0;
+        if (Math.abs(price) < 0.01) continue;
+        store.serviceItems.set(name, (store.serviceItems.get(name) || 0) + price);
+      }
+    }
+    function ingestCashFlowDetails(store, details) {
+      if (!details) return;
+      const d = store.det;
+      if (details.delivery) {
+        d.deliveryAmount = (d.deliveryAmount || 0) + (Number(details.delivery.amount) || 0);
+        d.deliveryTotal = (d.deliveryTotal || 0) + (Number(details.delivery.total) || 0);
+        ingestCashFlowDetailItems(store, details.delivery.delivery_services?.items, 'Доставка: ');
+      }
+      if (details.return) {
+        d.returnAmount = (d.returnAmount || 0) + (Number(details.return.amount) || 0);
+        d.returnTotal = (d.returnTotal || 0) + (Number(details.return.total) || 0);
+        ingestCashFlowDetailItems(store, details.return.return_services?.items, 'Возврат: ');
+      }
+      ingestCashFlowDetailItems(store, details.services?.items);
+      ingestCashFlowDetailItems(store, details.others?.items, 'Прочее: ');
+    }
+    function classifyLcSalesLine(name) {
+      const n = String(name).toLowerCase();
+      if (/балл|points|bonus|скидк|discount/i.test(n)) return 'Баллы за скидки';
+      if (/партн|partner|program|premium/i.test(n)) return 'Программы партнёров';
+      return null;
+    }
+    function classifyLcAccrualGroup(name) {
+      const n = String(name).toLowerCase();
+      if (/utiliz|штраф|ошибок|индекс|penalt|fine|disposal|нерекоменд/i.test(n)) return 'Другие услуги и штрафы';
+      if (/временн|партн|эквайр|acquiring|partner/i.test(n)) return 'Услуги партнёров';
+      if (/клик|marketing|продвиж|реклам|click|costoperation/i.test(n)) return 'Продвижение и реклама';
+      if (/размещ|storage|склад|fbo/i.test(n)) return 'Услуги FBO';
+      if (/достав|delivery|логист|magistral|курьер|fulfillment|dropoff/i.test(n)) return 'Услуги доставки';
+      return 'Прочие начисления';
+    }
+    function buildLcBreakdown(balance, detailStore) {
+      const orders = Number(balance?.orders_amount) || 0;
+      const returns = Number(balance?.returns_amount) || 0;
+      const salesTotal = orders + returns;
+      const salesLines = [];
+      const d = detailStore?.det || {};
+      if (d.deliveryAmount) salesLines.push(['Выручка', d.deliveryAmount]);
+      const salesFromServices = new Map();
+      const accrualFromServices = new Map();
+      if (detailStore?.serviceItems) {
+        detailStore.serviceItems.forEach((price, name) => {
+          const salesKey = classifyLcSalesLine(name);
+          if (salesKey) salesFromServices.set(salesKey, (salesFromServices.get(salesKey) || 0) + price);
+          else {
+            const g = classifyLcAccrualGroup(name);
+            accrualFromServices.set(g, (accrualFromServices.get(g) || 0) + price);
+          }
+        });
+      }
+      salesFromServices.forEach((v, k) => salesLines.push([k, v]));
+      if (d.returnAmount && !salesLines.some((x) => x[0].includes('Возврат'))) {
+        salesLines.push(['Возвраты (отчёт)', d.returnAmount]);
+      }
+      if (!salesLines.length) {
+        if (orders) salesLines.push(['Продажи', orders]);
+        if (returns) salesLines.push(['Возвраты', returns]);
+      }
+      const accrualLines = [];
+      const comm = Number(balance?.commission_amount) || 0;
+      if (comm) accrualLines.push(['Вознаграждение Ozon', comm]);
+      const lcOrder = [
+        'Другие услуги и штрафы',
+        'Услуги партнёров',
+        'Продвижение и реклама',
+        'Услуги FBO',
+        'Услуги доставки',
+        'Прочие начисления',
+      ];
+      lcOrder.forEach((label) => {
+        const v = accrualFromServices.get(label);
+        if (v) accrualLines.push([label, v]);
+      });
+      const deliveryBal = Number(balance?.item_delivery_and_return_amount) || 0;
+      if (deliveryBal && !accrualLines.some((x) => x[0] === 'Услуги доставки')) {
+        accrualLines.push(['Услуги доставки', deliveryBal]);
+      }
+      const accrualTotal = accrualLines.reduce((s, [, v]) => s + (Number(v) || 0), 0);
+      const salesSubtotal = salesLines.reduce((s, [, v]) => s + (Number(v) || 0), 0);
+      return {
+        salesTotal,
+        salesLines,
+        salesSubtotal,
+        accrualTotal,
+        accrualLines,
+        total: ozonBalanceNet(balance),
+      };
+    }
     function sumFinanceTotals(t) {
       if (!t) return 0;
       return FIN_TOTAL_KEYS.reduce((s, row) => s + (Number(t[row[0]]) || 0), 0);
@@ -3065,9 +3232,11 @@
         vatP: Number($('vatRate')?.value) || 0,
       };
     }
-    function estimateDashTax(totals, settings) {
-      const revenue = Math.abs(Number(totals?.accruals_for_sale) || 0);
-      const ozonNet = sumFinanceTotals(totals);
+    function estimateDashTax(balance, totals, settings) {
+      const revenue = balance
+        ? Math.max(0, Number(balance.orders_amount) || 0)
+        : Math.max(0, Number(totals?.accruals_for_sale) || 0);
+      const ozonNet = balance ? ozonBalanceNet(balance) : sumFinanceTotals(totals);
       const taxP = settings.taxP;
       const vatP = settings.vatP;
       let taxAmt = revenue * (taxP / 100);
@@ -3189,7 +3358,8 @@
       return { rows, revenue, units };
     }
     async function fetchCashFlowRange(from, to) {
-      const serviceMap = new Map();
+      const detailStore = emptyCashFlowDetailsStore();
+      const balance = emptyOzonBalance();
       let page = 1;
       let pageCount = 1;
       const flows = [];
@@ -3204,36 +3374,24 @@
         const result = res.data?.result || res.data || {};
         pageCount = Number(result.page_count) || 1;
         const list = result.cash_flows || [];
+        for (const flow of list) {
+          if (flowOverlapsRange(flow, from, to)) mergeOzonBalance(balance, flow);
+        }
         flows.push(...list);
         const details = result.details;
-        if (details?.services?.items) {
-          for (const it of details.services.items) {
-            const name = it.name || 'Услуга';
-            serviceMap.set(name, (serviceMap.get(name) || 0) + (Number(it.price) || 0));
-          }
-        }
-        if (details?.delivery?.delivery_services?.items) {
-          for (const it of details.delivery.delivery_services.items) {
-            const name = 'Доставка: ' + (it.name || '—');
-            serviceMap.set(name, (serviceMap.get(name) || 0) + (Number(it.price) || 0));
-          }
-        }
-        if (details?.return?.return_services?.items) {
-          for (const it of details.return.return_services.items) {
-            const name = 'Возврат: ' + (it.name || '—');
-            serviceMap.set(name, (serviceMap.get(name) || 0) + (Number(it.price) || 0));
-          }
-        }
-        if (details?.others?.items) {
-          for (const it of details.others.items) {
-            const name = it.name || 'Прочее';
-            serviceMap.set(name, (serviceMap.get(name) || 0) + (Number(it.price) || 0));
-          }
-        }
+        if (details) ingestCashFlowDetails(detailStore, details);
         page += 1;
         if (!list.length && page > 1) break;
       }
-      return { flows, services: [...serviceMap.entries()].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])) };
+      const services = [...detailStore.serviceItems.entries()].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+      const lcBreakdown = buildLcBreakdown(balance, detailStore);
+      return {
+        flows,
+        balance,
+        net: ozonBalanceNet(balance),
+        lcBreakdown,
+        services,
+      };
     }
     async function fetchOpTypeBreakdown(from, to) {
       const map = new Map();
@@ -3278,7 +3436,7 @@
         services: [...serviceMap.entries()].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])),
       };
     }
-    const CHART_NEON = ['#8b5cf6', '#2dd4bf', '#f472b6', '#2563eb', '#e5e7eb', '#a78bfa', '#22d3ee', '#fb923c'];
+    const CHART_BRAND = ['#8b5cf6', '#ec4899', '#22d3ee', '#a78bfa', '#f472b6', '#2dd4bf', '#6366f1', '#fb923c'];
     let dashChartsThemed = false;
 
     function destroyDashCharts() {
@@ -3292,9 +3450,9 @@
     }
     function initDashChartTheme() {
       if (dashChartsThemed || typeof Chart === 'undefined') return;
-      Chart.defaults.color = '#94a3b8';
-      Chart.defaults.borderColor = 'rgba(255,255,255,0.06)';
-      Chart.defaults.font.family = 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+      Chart.defaults.color = '#64748b';
+      Chart.defaults.borderColor = 'rgba(139, 92, 246, 0.1)';
+      Chart.defaults.font.family = "'Manrope', system-ui, sans-serif";
       dashChartsThemed = true;
     }
     function chartTooltipLabel(ctx) {
@@ -3307,14 +3465,16 @@
     }
     function chartTooltipPlugin() {
       return {
-        backgroundColor: 'rgba(22, 26, 32, 0.96)',
-        titleColor: '#f1f5f9',
-        bodyColor: '#cbd5e1',
-        borderColor: 'rgba(255,255,255,0.12)',
+        backgroundColor: 'rgba(255, 255, 255, 0.97)',
+        titleColor: '#0f172a',
+        bodyColor: '#475569',
+        borderColor: 'rgba(139, 92, 246, 0.28)',
         borderWidth: 1,
         padding: 12,
-        cornerRadius: 10,
+        cornerRadius: 12,
         displayColors: true,
+        titleFont: { weight: '700', size: 12, family: "'Manrope', sans-serif" },
+        bodyFont: { size: 12, family: "'Manrope', sans-serif" },
         callbacks: { label: chartTooltipLabel },
       };
     }
@@ -3322,22 +3482,33 @@
       return {
         position: 'bottom',
         labels: {
-          color: '#94a3b8',
+          color: '#64748b',
           boxWidth: 10,
           boxHeight: 10,
           usePointStyle: true,
           pointStyle: 'circle',
           padding: 14,
-          font: { size: 11 },
+          font: { size: 11, family: "'Manrope', sans-serif", weight: '600' },
           ...(extra || {}),
         },
       };
     }
-    function chartScaleDark(extra) {
+    function chartScaleLight(extra) {
       return {
-        grid: { color: 'rgba(255,255,255,0.06)', drawBorder: false },
-        ticks: { color: '#64748b', font: { size: 10 } },
+        grid: { color: 'rgba(139, 92, 246, 0.1)', drawBorder: false },
+        ticks: { color: '#64748b', font: { size: 10, family: "'Manrope', sans-serif" } },
         border: { display: false },
+        ...(extra || {}),
+      };
+    }
+    function dashChartAnim(extra) {
+      return {
+        duration: 850,
+        easing: 'easeOutQuart',
+        delay: (ctx) => {
+          if (ctx.type !== 'data' || ctx.mode !== 'default') return 0;
+          return (ctx.dataIndex || 0) * 35;
+        },
         ...(extra || {}),
       };
     }
@@ -3345,7 +3516,8 @@
       return {
         responsive: true,
         maintainAspectRatio: false,
-        animation: { duration: 650, easing: 'easeOutQuart' },
+        animation: dashChartAnim(),
+        interaction: { mode: 'index', intersect: false },
         plugins: {
           legend: chartLegendPlugin(),
           tooltip: chartTooltipPlugin(),
@@ -3363,20 +3535,29 @@
       g.addColorStop(1, c2);
       return g;
     }
-    function chartNeonFills(chart, count) {
-      return CHART_NEON.slice(0, count).map((hex, i) => {
-        const next = CHART_NEON[(i + 1) % CHART_NEON.length];
+    function chartBrandFills(chart, count) {
+      return CHART_BRAND.slice(0, count).map((hex, i) => {
+        const next = CHART_BRAND[(i + 1) % CHART_BRAND.length];
         return chartLinearGradient(chart, hex, next, true);
       });
     }
     function chartDonutColors(chart, count) {
-      return CHART_NEON.slice(0, count).map((hex, i) =>
-        chartLinearGradient(chart, hex, CHART_NEON[(i + 2) % CHART_NEON.length], true)
+      return CHART_BRAND.slice(0, count).map((hex, i) =>
+        chartLinearGradient(chart, hex, CHART_BRAND[(i + 2) % CHART_BRAND.length], true)
       );
     }
-    function financeExpenseSlices(totals) {
-      const skip = new Set(['accruals_for_sale', 'compensation_amount', 'money_transfer']);
+    function financeExpenseSlices(balance, totals) {
       const out = [];
+      if (balance && ozonBalanceNet(balance) !== 0) {
+        for (const [key, label] of OZON_BALANCE_ROWS) {
+          const v = Number(balance[key]) || 0;
+          if (v === 0) continue;
+          if (key === 'orders_amount' && v > 0) continue;
+          out.push({ label, value: Math.abs(v) });
+        }
+        return out.sort((a, b) => b.value - a.value);
+      }
+      const skip = new Set(['accruals_for_sale', 'compensation_amount', 'money_transfer']);
       for (const row of FIN_TOTAL_KEYS) {
         if (skip.has(row[0])) continue;
         const v = Number(totals[row[0]]) || 0;
@@ -3475,8 +3656,9 @@
                 type: 'bar',
                 label: 'Выручка',
                 data: rows.map((r) => r.revenue),
-                backgroundColor: (ctx) => chartLinearGradient(ctx.chart, '#8b5cf6', '#2563eb', true),
-                borderRadius: 10,
+                backgroundColor: (ctx) => chartLinearGradient(ctx.chart, '#8b5cf6', '#ec4899', true),
+                hoverBackgroundColor: (ctx) => chartLinearGradient(ctx.chart, '#7c3aed', '#db2777', true),
+                borderRadius: 12,
                 borderSkipped: false,
                 barPercentage: 0.62,
                 yAxisID: 'y',
@@ -3485,34 +3667,35 @@
                 type: 'line',
                 label: 'Заказы, шт.',
                 data: rows.map((r) => r.units),
-                borderColor: '#2dd4bf',
-                backgroundColor: (ctx) => chartLinearGradient(ctx.chart, 'rgba(45,212,191,0.35)', 'rgba(45,212,191,0)', true),
+                borderColor: '#06b6d4',
+                backgroundColor: (ctx) => chartLinearGradient(ctx.chart, 'rgba(34,211,238,0.28)', 'rgba(34,211,238,0.02)', true),
                 fill: true,
-                tension: 0.4,
+                tension: 0.42,
                 borderWidth: 2.5,
                 pointRadius: 4,
-                pointHoverRadius: 6,
-                pointBackgroundColor: '#2dd4bf',
-                pointBorderColor: '#12151a',
+                pointHoverRadius: 7,
+                pointBackgroundColor: '#22d3ee',
+                pointBorderColor: '#ffffff',
                 pointBorderWidth: 2,
+                pointHoverBorderWidth: 2,
                 yAxisID: 'y1',
               },
             ],
           },
           options: dashChartBaseOptions({
             scales: {
-              x: chartScaleDark({ grid: { display: false } }),
-              y: chartScaleDark({
+              x: chartScaleLight({ grid: { display: false } }),
+              y: chartScaleLight({
                 position: 'left',
                 ticks: { callback: (v) => (Math.abs(v) >= 1000 ? Math.round(v / 1000) + 'k' : v) },
               }),
-              y1: chartScaleDark({ position: 'right', grid: { drawOnChartArea: false }, beginAtZero: true }),
+              y1: chartScaleLight({ position: 'right', grid: { drawOnChartArea: false }, beginAtZero: true }),
             },
           }),
         });
       }
 
-      const slices = financeExpenseSlices(cur.totals);
+      const slices = financeExpenseSlices(cur.balance, cur.totals);
       const expEl = $('dashChartExpenses');
       if (expEl && slices.length) {
         const n = slices.length;
@@ -3523,10 +3706,12 @@
             datasets: [{
               data: slices.map((s) => s.value),
               backgroundColor: (ctx) => chartDonutColors(ctx.chart, n)[ctx.dataIndex % n],
-              borderWidth: 0,
+              borderWidth: 3,
+              borderColor: '#ffffff',
               borderRadius: 14,
-              spacing: 5,
-              hoverOffset: 10,
+              spacing: 4,
+              hoverOffset: 14,
+              hoverBorderWidth: 0,
             }],
           },
           options: dashChartBaseOptions({
@@ -3540,21 +3725,17 @@
       }
 
       const cmpEl = $('dashChartCompare');
-      if (cmpEl && prev?.totals) {
-        const cmpLabels = ['Начисления', 'К перечислению', 'Комиссия', 'Логистика', 'Услуги'];
+      if (cmpEl && (cur.balance || prev?.balance)) {
+        const cmpLabels = ['Продажи', 'Возвраты', 'Начислено за период'];
         const curVals = [
-          Math.abs(Number(cur.totals.accruals_for_sale) || 0),
-          sumFinanceTotals(cur.totals),
-          Math.abs(Number(cur.totals.sale_commission) || 0),
-          Math.abs(Number(cur.totals.processing_and_delivery) || 0),
-          Math.abs(Number(cur.totals.services_amount) || 0),
+          Math.abs(Number(cur.balance?.orders_amount) || 0),
+          Math.abs(Number(cur.balance?.returns_amount) || 0),
+          Math.abs(ozonBalanceNet(cur.balance)),
         ];
         const prevVals = [
-          Math.abs(Number(prev.totals.accruals_for_sale) || 0),
-          sumFinanceTotals(prev.totals),
-          Math.abs(Number(prev.totals.sale_commission) || 0),
-          Math.abs(Number(prev.totals.processing_and_delivery) || 0),
-          Math.abs(Number(prev.totals.services_amount) || 0),
+          Math.abs(Number(prev.balance?.orders_amount) || 0),
+          Math.abs(Number(prev.balance?.returns_amount) || 0),
+          Math.abs(ozonBalanceNet(prev.balance)),
         ];
         charts.compare = new Chart(cmpEl, {
           type: 'bar',
@@ -3564,16 +3745,18 @@
               {
                 label: 'Текущий период',
                 data: curVals,
-                backgroundColor: (ctx) => chartLinearGradient(ctx.chart, '#8b5cf6', '#2563eb', false),
-                borderRadius: 10,
+                backgroundColor: (ctx) => chartLinearGradient(ctx.chart, '#8b5cf6', '#ec4899', false),
+                hoverBackgroundColor: (ctx) => chartLinearGradient(ctx.chart, '#7c3aed', '#db2777', false),
+                borderRadius: 12,
                 borderSkipped: false,
                 barPercentage: 0.72,
               },
               {
                 label: 'Предыдущий период',
                 data: prevVals,
-                backgroundColor: (ctx) => chartLinearGradient(ctx.chart, '#64748b', '#334155', false),
-                borderRadius: 10,
+                backgroundColor: (ctx) => chartLinearGradient(ctx.chart, 'rgba(148,163,184,0.45)', 'rgba(203,213,225,0.65)', false),
+                hoverBackgroundColor: (ctx) => chartLinearGradient(ctx.chart, 'rgba(100,116,139,0.55)', 'rgba(148,163,184,0.75)', false),
+                borderRadius: 12,
                 borderSkipped: false,
                 barPercentage: 0.72,
               },
@@ -3581,8 +3764,8 @@
           },
           options: dashChartBaseOptions({
             scales: {
-              x: chartScaleDark({ grid: { display: false } }),
-              y: chartScaleDark({ beginAtZero: true }),
+              x: chartScaleLight({ grid: { display: false } }),
+              y: chartScaleLight({ beginAtZero: true }),
             },
           }),
         });
@@ -3599,8 +3782,9 @@
             datasets: [{
               label: 'Сумма',
               data: topSvc.map(([, price]) => Math.abs(price)),
-              backgroundColor: (ctx) => chartNeonFills(ctx.chart, n)[ctx.dataIndex % n],
-              borderRadius: 10,
+              backgroundColor: (ctx) => chartBrandFills(ctx.chart, n)[ctx.dataIndex % n],
+              hoverBackgroundColor: (ctx) => chartBrandFills(ctx.chart, n)[ctx.dataIndex % n],
+              borderRadius: 12,
               borderSkipped: false,
               barPercentage: 0.65,
             }],
@@ -3609,8 +3793,8 @@
             indexAxis: 'y',
             plugins: { legend: { display: false }, tooltip: chartTooltipPlugin() },
             scales: {
-              x: chartScaleDark({ beginAtZero: true }),
-              y: chartScaleDark({ grid: { display: false } }),
+              x: chartScaleLight({ beginAtZero: true }),
+              y: chartScaleLight({ grid: { display: false } }),
             },
           }),
         });
@@ -3627,19 +3811,21 @@
       return '<span class="' + cls + ' text-xs font-medium">' + sign + rub(d) + ' · ' + sign + p.toFixed(1) + '%</span>';
     }
     function renderDashKpis(cur, prev, analytics) {
-      const net = sumFinanceTotals(cur.totals);
-      const prevNet = prev ? sumFinanceTotals(prev.totals) : null;
-      const rev = Math.abs(Number(cur.totals.accruals_for_sale) || 0);
-      const prevRev = prev ? Math.abs(Number(prev.totals.accruals_for_sale) || 0) : null;
+      const net = cur.balance ? ozonBalanceNet(cur.balance) : sumFinanceTotals(cur.totals);
+      const prevNet = prev ? (prev.balance ? ozonBalanceNet(prev.balance) : sumFinanceTotals(prev.totals)) : null;
+      const sales = Number(cur.balance?.orders_amount) || 0;
+      const prevSales = prev?.balance != null ? Number(prev.balance.orders_amount) || 0 : null;
+      const returns = Number(cur.balance?.returns_amount) || 0;
+      const prevReturns = prev?.balance != null ? Number(prev.balance.returns_amount) || 0 : null;
       const units = analytics?.units || 0;
       const prevUnits = prev?.analytics?.units;
-      const avg = units > 0 ? rev / units : 0;
-      const prevAvg = prevUnits > 0 && prevRev != null ? prevRev / prevUnits : null;
+      const avg = units > 0 && sales > 0 ? sales / units : 0;
+      const prevAvg = prevUnits > 0 && prevSales != null && prevSales > 0 ? prevSales / prevUnits : null;
       const cards = [
-        { title: 'Начисления за продажи', val: rev, prev: prevRev, invert: false },
-        { title: 'К перечислению (Ozon)', val: net, prev: prevNet, invert: false },
-        { title: 'Заказано, шт.', val: units, prev: prevUnits, invert: false, fmt: (n) => (Number.isFinite(n) ? n.toLocaleString('ru-RU') : '—') },
-        { title: 'Средний чек (начисл./шт.)', val: avg, prev: prevAvg, invert: false },
+        { title: 'Начислено за период', val: net, prev: prevNet, invert: false },
+        { title: 'Продажи', val: sales, prev: prevSales, invert: false },
+        { title: 'Возвраты', val: returns, prev: prevReturns, invert: true },
+        { title: 'Заказано, шт. (аналитика)', val: units, prev: prevUnits, invert: false, fmt: (n) => (Number.isFinite(n) ? n.toLocaleString('ru-RU') : '—') },
       ];
       $('dashKpis').innerHTML = cards.map((c) => {
         const fmt = c.fmt || rub;
@@ -3650,38 +3836,88 @@
       const box = $('dashCompare');
       if (!box || !prev) return;
       box.classList.remove('hidden');
-      const metrics = [
-        ['Начисления', Math.abs(Number(cur.totals.accruals_for_sale) || 0), Math.abs(Number(prev.totals.accruals_for_sale) || 0), false],
-        ['К перечислению', sumFinanceTotals(cur.totals), sumFinanceTotals(prev.totals), false],
-        ['Комиссия', Number(cur.totals.sale_commission) || 0, Number(prev.totals.sale_commission) || 0, true],
-        ['Логистика', Number(cur.totals.processing_and_delivery) || 0, Number(prev.totals.processing_and_delivery) || 0, true],
-        ['Услуги', Number(cur.totals.services_amount) || 0, Number(prev.totals.services_amount) || 0, true],
-        ['Возвраты', Number(cur.totals.refunds_and_cancellations) || 0, Number(prev.totals.refunds_and_cancellations) || 0, true],
-      ];
+      const curNet = cur.balance ? ozonBalanceNet(cur.balance) : sumFinanceTotals(cur.totals);
+      const prevNet = prev.balance ? ozonBalanceNet(prev.balance) : sumFinanceTotals(prev.totals);
+      const metrics = cur.balance
+        ? [
+          ['Начислено за период', curNet, prevNet, false],
+          ['Продажи', Number(cur.balance.orders_amount) || 0, Number(prev.balance?.orders_amount) || 0, false],
+          ['Возвраты', Number(cur.balance.returns_amount) || 0, Number(prev.balance?.returns_amount) || 0, true],
+          ['Вознаграждение Ozon', Number(cur.balance.commission_amount) || 0, Number(prev.balance?.commission_amount) || 0, true],
+          ['Услуги и реклама', Number(cur.balance.services_amount) || 0, Number(prev.balance?.services_amount) || 0, true],
+        ]
+        : [
+          ['К перечислению', curNet, prevNet, false],
+          ['Комиссия', Number(cur.totals.sale_commission) || 0, Number(prev.totals.sale_commission) || 0, true],
+          ['Услуги', Number(cur.totals.services_amount) || 0, Number(prev.totals.services_amount) || 0, true],
+        ];
       box.innerHTML = '<p class="mb-2 font-semibold text-slate-800">Сравнение с предыдущим периодом (' + prev.from + ' — ' + prev.to + ')</p><div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">' + metrics.map((m) =>
         '<div class="rounded-xl bg-white/80 px-3 py-2"><span class="text-xs text-slate-500">' + m[0] + '</span><div class="flex flex-wrap items-baseline gap-2"><span class="font-semibold">' + rub(m[1]) + '</span>' + deltaBadge(m[1], m[2], m[3]) + '</div></div>'
       ).join('') + '</div>';
     }
-    function renderDashFinance(totals) {
+    function renderLcFinanceSection(lc) {
+      if (!lc) return '';
+      let html = '';
+      const row = (label, val, bold) => {
+        const v = Number(val) || 0;
+        const cls = v < 0 ? 'text-red-600' : 'text-slate-800';
+        return '<div class="flex justify-between gap-2 py-0.5' + (bold ? ' font-semibold' : '') + '"><span class="' + (bold ? '' : 'text-slate-600 pl-2') + '">' + label + '</span><span class="' + cls + '">' + rub(v) + '</span></div>';
+      };
+      html += row('Продажи и возвраты', lc.salesTotal, true);
+      lc.salesLines.forEach(([label, val]) => {
+        html += row(label, val, false);
+      });
+      if (Math.abs(lc.salesSubtotal - lc.salesTotal) > 1) {
+        html += '<p class="pl-2 text-[10px] text-slate-400">Сумма строк: ' + rub(lc.salesSubtotal) + '</p>';
+      }
+      html += '<div class="my-2 border-t border-slate-100"></div>';
+      html += row('Начисления', lc.accrualTotal, true);
+      lc.accrualLines.forEach(([label, val]) => {
+        html += row(label, val, false);
+      });
+      html += '<div class="my-2 border-t border-slate-100"></div>';
+      html += row('Итого (как в ЛК Ozon)', lc.total, true);
+      return html;
+    }
+    function renderDashFinance(balance, totals, lcBreakdown) {
       const el = $('dashFinance');
       if (!el) return;
-      const net = sumFinanceTotals(totals);
-      let html = '<div class="flex justify-between border-b border-slate-100 pb-2 font-semibold"><span>Итого к перечислению</span><span class="text-ozon">' + rub(net) + '</span></div>';
-      for (const [key, label] of FIN_TOTAL_KEYS) {
-        const v = Number(totals[key]) || 0;
-        if (v === 0) continue;
-        const cls = v < 0 ? 'text-red-600' : 'text-slate-800';
-        html += '<div class="flex justify-between gap-2 py-1"><span class="text-slate-600">' + label + '</span><span class="' + cls + ' font-medium">' + rub(v) + '</span></div>';
+      let html = '';
+      if (lcBreakdown && lcBreakdown.total !== 0) {
+        html += renderLcFinanceSection(lcBreakdown);
+        html += '<p class="mt-3 text-[11px] text-slate-400">Структура как в разделе «Доходы и расходы» Ozon. Детальная таблица начислений — в блоках «Услуги Ozon» и «Типы операций» ниже.</p>';
+      } else if (balance && ozonBalanceNet(balance) !== 0) {
+        const net = ozonBalanceNet(balance);
+        html += '<div class="flex justify-between border-b border-slate-100 pb-2 font-semibold"><span>Начислено за период</span><span class="text-ozon">' + rub(net) + '</span></div>';
+        for (const [key, label] of OZON_BALANCE_ROWS) {
+          const v = Number(balance[key]) || 0;
+          if (v === 0) continue;
+          const cls = v < 0 ? 'text-red-600' : 'text-slate-800';
+          html += '<div class="flex justify-between gap-2 py-1"><span class="text-slate-600">' + label + '</span><span class="' + cls + ' font-medium">' + rub(v) + '</span></div>';
+        }
+        const totalsNet = sumFinanceTotals(totals);
+        if (totals && Math.abs(totalsNet - net) > 1) {
+          html += '<p class="mt-2 text-[11px] text-slate-400">Сверка API totals: ' + rub(totalsNet) + ' (расхождение ' + rub(totalsNet - net) + ')</p>';
+        }
+      } else if (totals) {
+        const net = sumFinanceTotals(totals);
+        html += '<div class="flex justify-between border-b border-slate-100 pb-2 font-semibold"><span>Итого (API totals)</span><span class="text-ozon">' + rub(net) + '</span></div>';
+        for (const [key, label] of FIN_TOTAL_KEYS) {
+          const v = Number(totals[key]) || 0;
+          if (v === 0) continue;
+          const cls = v < 0 ? 'text-red-600' : 'text-slate-800';
+          html += '<div class="flex justify-between gap-2 py-1"><span class="text-slate-600">' + label + '</span><span class="' + cls + ' font-medium">' + rub(v) + '</span></div>';
+        }
       }
       el.innerHTML = html || '<p class="text-slate-400">Нет данных за период</p>';
     }
-    function renderDashTaxEst(totals) {
+    function renderDashTaxEst(balance, totals) {
       const el = $('dashTaxEst');
       if (!el) return;
-      const est = estimateDashTax(totals, dashTaxSettings());
+      const est = estimateDashTax(balance, totals, dashTaxSettings());
       el.innerHTML = [
-        ['Начисления (база)', est.revenue],
-        ['К перечислению до налога', est.ozonNet],
+        ['Продажи (база налога)', est.revenue],
+        ['Начислено за период до налога', est.ozonNet],
         ['Оценка налога', -est.taxAmt],
         ['Оценка НДС', -est.vatAmt],
         ['После налогов (оценка)', est.afterTax],
@@ -3733,8 +3969,8 @@
       state.dashboard.data = payload;
       renderDashKpis(payload.current, payload.previous, payload.current.analytics);
       renderDashCompare(payload.current, payload.previous);
-      renderDashFinance(payload.current.totals);
-      renderDashTaxEst(payload.current.totals);
+      renderDashFinance(payload.current.balance, payload.current.totals, payload.current.lcBreakdown);
+      renderDashTaxEst(payload.current.balance, payload.current.totals);
       renderDashAnalytics(payload.current.analytics.rows);
       renderDashServices(dashServiceRows(payload.current), payload.current.serviceSource);
       renderDashOpTypes(payload.current.opTypes);
@@ -3743,7 +3979,9 @@
     }
     function refreshDashTaxFromSettings() {
       updateDashTaxInfo();
-      if (state.dashboard.data) renderDashTaxEst(state.dashboard.data.current.totals);
+      if (state.dashboard.data) {
+        renderDashTaxEst(state.dashboard.data.current.balance, state.dashboard.data.current.totals);
+      }
     }
     async function loadDashboard(opts) {
       const force = !!(opts && opts.force);
@@ -3772,10 +4010,11 @@
       dashSetStatus('Загрузка: финансы, аналитика, отчёт…', false);
       try {
         const prev = dashPrevPeriod(from, to);
-        const [totals, prevTotals, cashFlow, opBreakdown] = await Promise.all([
+        const [totals, prevTotals, cashFlow, prevCashFlow, opBreakdown] = await Promise.all([
           fetchFinanceTotalsRange(from, to),
           fetchFinanceTotalsRange(prev.from, prev.to),
           fetchCashFlowRange(from, to),
+          fetchCashFlowRange(prev.from, prev.to),
           dashPeriodDays(from, to) <= 31 ? fetchOpTypeBreakdown(from, to) : Promise.resolve({ opTypes: [], services: [] }),
         ]);
         const analytics = await fetchAnalyticsRange(from, to);
@@ -3785,9 +4024,17 @@
         const payload = {
           from,
           to,
-          previous: { from: prev.from, to: prev.to, totals: prevTotals, analytics: prevAnalytics },
+          previous: {
+            from: prev.from,
+            to: prev.to,
+            totals: prevTotals,
+            balance: prevCashFlow.balance,
+            analytics: prevAnalytics,
+          },
           current: {
             totals,
+            balance: cashFlow.balance,
+            lcBreakdown: cashFlow.lcBreakdown,
             analytics,
             services: financeServices,
             serviceSource,
