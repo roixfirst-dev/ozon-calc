@@ -173,6 +173,13 @@
 
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
+    body.cat-menu-open .fs-panel--params { position: relative; z-index: 60; }
+    #catComboMenu.cat-combo-menu--open {
+      position: fixed;
+      z-index: 9999;
+      max-height: min(18rem, 55vh);
+      box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18), 0 0 0 1px rgba(139, 92, 246, 0.12);
+    }
     .tab-panel.active.tab-panel--animate { animation: panelIn 0.35s ease both; }
     .tab-btn {
       transition: transform 0.2s, box-shadow 0.2s, background 0.2s, border-color 0.2s, color 0.2s;
@@ -563,7 +570,7 @@
 
     <section id="tab-calc" class="tab-panel active w-full min-w-0">
       <div class="grid w-full min-w-0 gap-4 lg:grid-cols-2 lg:gap-6">
-        <div class="fs-panel w-full min-w-0 space-y-4 p-4 sm:p-6">
+        <div class="fs-panel fs-panel--params w-full min-w-0 space-y-4 p-4 sm:p-6">
           <h2 class="fs-panel-title">Параметры</h2>
 
           <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -572,7 +579,8 @@
             <label class="text-sm"><span class="text-slate-500">Высота, см</span><input id="hei" type="number" min="1" value="8" class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5" /></label>
             <label class="text-sm"><span class="text-slate-500">Вес, кг</span><input id="weight" type="number" min="0.1" step="0.1" value="1.2" class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5" /></label>
           </div>
-          <p class="text-xs text-slate-500">Объём: <span id="volLabel">6,00</span> л · вес для API: <span id="wtApi">1</span> кг (<span id="volApi">6,00</span> л)</p>
+          <p class="text-xs text-slate-500">Габаритный объём: <span id="volDimLabel">6,00</span> л · для тарифов: <strong id="volLabel">6,00</strong> л · вес: <span id="wtApi">1</span> кг</p>
+          <p id="commissionHint" class="hidden text-xs text-emerald-700"></p>
 
           <div class="grid grid-cols-2 gap-3">
             <label class="text-sm"><span class="text-slate-500">Себестоимость, ₽</span><input id="purchase" type="number" min="0" value="800" class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5" /></label>
@@ -881,7 +889,7 @@
       logisticsTables: { FBS: null, FBO: null }, logisticsReady: false, logisticsError: '',
       categoryTypeById: new Map(),
       assortSearch: '', assortSort: 'default', dataLoading: false,
-      assortmentLoaded: false, assortmentLoading: false, assortmentDomBuilt: false, productListPath: '',
+      assortmentLoaded: false, assortmentLoading: false, assortmentDomBuilt: false, assortTabMounted: false, productListPath: '',
       dashboard: { loading: false, loaded: false, periodKey: '', data: null, charts: {} },
       tabsVisited: {},
       subscriptionBlocked: false,
@@ -969,6 +977,21 @@
     function ceilL(l, w, h) {
       return Math.ceil(((Number(l) * Number(w) * Number(h)) / 1000) * 100) / 100;
     }
+    /** Объём для тарифов: как в ЛК Ozon — volume_weight, иначе min(габариты, вес в кг). */
+    function volumeFromDimsCm(l, w, h) {
+      const len = Number(l) || 0;
+      const wid = Number(w) || 0;
+      const hei = Number(h) || 0;
+      if (!len || !wid || !hei) return 0;
+      if (Math.max(len, wid, hei) >= 50) return (len * wid * hei) / 1_000_000;
+      return ceilL(len, wid, hei);
+    }
+    function volumeForTariff(l, w, h, weightKg) {
+      const dim = volumeFromDimsCm(l, w, h);
+      const kg = Number(weightKg) || 0;
+      if (kg > 0 && kg <= 190 && (dim <= 0 || kg < dim)) return Math.ceil(kg * 100) / 100;
+      return Math.ceil((dim || kg) * 100) / 100;
+    }
 
     /** Объём в литрах: Ozon API отдаёт габариты в мм; приоритет — volume_weight из ЛК. */
     function productVolumeLiters(product) {
@@ -980,15 +1003,17 @@
       const w = Number(product?.width) || 0;
       const h = Number(product?.height) || 0;
       if (!d || !w || !h) return null;
-      let vol;
+      let dim;
       if (Math.max(d, w, h) >= 50) {
-        vol = (d * w * h) / 1_000_000;
+        dim = (d * w * h) / 1_000_000;
       } else {
-        vol = ceilL(d, w, h);
+        dim = ceilL(d, w, h);
       }
-      vol = Math.ceil(vol * 100) / 100;
-      if (vol > 190 && Number.isFinite(vw) && vw > 0) return Math.ceil(vw * 100) / 100;
-      return vol > 0 ? vol : null;
+      dim = Math.ceil(dim * 100) / 100;
+      const weightKg = (Number(product?.weight) || 0) / 1000;
+      if (weightKg > 0 && weightKg < dim) return Math.ceil(weightKg * 100) / 100;
+      if (dim > 190 && Number.isFinite(vw) && vw > 0) return Math.ceil(vw * 100) / 100;
+      return dim > 0 ? dim : null;
     }
 
     function productDimsLabel(product) {
@@ -1379,14 +1404,39 @@
       return out;
     }
 
+    function positionCatComboMenu() {
+      const btn = $('catComboBtn');
+      const menu = $('catComboMenu');
+      if (!btn || !menu || menu.classList.contains('hidden')) return;
+      const r = btn.getBoundingClientRect();
+      const gap = 4;
+      const maxH = Math.min(288, window.innerHeight - r.bottom - gap - 12);
+      menu.style.left = Math.max(8, r.left) + 'px';
+      menu.style.width = Math.min(r.width, window.innerWidth - 16) + 'px';
+      menu.style.top = (r.bottom + gap) + 'px';
+      menu.style.maxHeight = Math.max(120, maxH) + 'px';
+    }
     function openCatCombo() {
-      $('catComboMenu').classList.remove('hidden');
+      const menu = $('catComboMenu');
+      if (!menu) return;
+      document.body.appendChild(menu);
+      menu.classList.remove('hidden');
+      menu.classList.add('cat-combo-menu--open');
+      document.body.classList.add('cat-menu-open');
       $('catComboSearch').value = '';
       renderCatComboList('');
+      positionCatComboMenu();
       setTimeout(() => $('catComboSearch').focus(), 0);
     }
     function closeCatCombo() {
-      $('catComboMenu').classList.add('hidden');
+      const menu = $('catComboMenu');
+      const host = $('catCombo');
+      if (!menu) return;
+      menu.classList.add('hidden');
+      menu.classList.remove('cat-combo-menu--open');
+      document.body.classList.remove('cat-menu-open');
+      menu.style.left = menu.style.top = menu.style.width = menu.style.maxHeight = '';
+      if (host && menu.parentElement !== host) host.appendChild(menu);
     }
     function selectCategoryType(item) {
       state.selectedType = item;
@@ -1429,16 +1479,61 @@
     }
     function initCategoryCombobox() {
       $('catComboBtn').disabled = false;
-      $('catComboLabel').textContent = '— выберите категорию и тип —';
+      $('catComboLabel').textContent = state.selectedType?.label || '— выберите категорию и тип —';
       state.categoryTypeById = new Map();
       state.categoryTypes.forEach((t) => {
         state.categoryTypeById.set(String(t.description_category_id) + ':' + String(t.type_id), t);
       });
-      if (state.categoryTypes.length && !state.selectedType) {
-        selectCategoryType(state.categoryTypes[0]);
-      } else {
-        renderCatComboList('');
+      renderCatComboList('');
+    }
+    function buildCategoryTypesFromCommissionTable() {
+      const table = state.commissionTable;
+      if (!table?.rows) return [];
+      const out = [];
+      const seen = new Set();
+      for (const [key, row] of Object.entries(table.rows)) {
+        if (key.startsWith('*|')) continue;
+        const parts = key.split('|');
+        if (parts.length < 2) continue;
+        const label = String(row.category || parts[0]).trim() + ' › ' + String(row.type || parts[1]).trim();
+        if (seen.has(label)) continue;
+        seen.add(label);
+        out.push({
+          description_category_id: 0,
+          type_id: 0,
+          label,
+          searchText: label.toLowerCase(),
+          commissionCategory: String(row.category || parts[0]).trim(),
+          commissionType: String(row.type || parts[1]).trim(),
+        });
       }
+      return out.sort((a, b) => a.label.localeCompare(b.label, 'ru'));
+    }
+    function initCommissionCategoriesFromTable() {
+      const types = buildCategoryTypesFromCommissionTable();
+      if (!types.length) return;
+      state.categoryTypes = types;
+      initCategoryCombobox();
+    }
+    function onCommissionTableReady() {
+      initCommissionCategoriesFromTable();
+      const hint = $('commissionHint');
+      if (hint && state.commissionTable?.count) {
+        hint.textContent = 'Таблица комиссий 2026: ' + state.commissionTable.count + ' типов · ' + (state.commissionTable.source || 'загружена');
+        hint.classList.remove('hidden');
+      }
+      recalc();
+      recalcAllAssortRowsDeferred();
+    }
+    function recalcAllAssortRowsDeferred() {
+      const run = () => {
+        if (state.products.length) recalcAllAssortRows();
+      };
+      if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 800 });
+      else setTimeout(run, 0);
+    }
+    function getActiveTabId() {
+      return document.querySelector('.tab-panel.active')?.id || 'tab-calc';
     }
 
     function payload() {
@@ -1446,7 +1541,7 @@
       const l = Number($('len').value) || 0;
       const w = Number($('wid').value) || 0;
       const h = Number($('hei').value) || 0;
-      const vol = ceilL(l, w, h);
+      const vol = volumeForTariff(l, w, h, $('weight').value);
       const kg = ceilKg($('weight').value);
       return {
         description_category_id: Number($('categoryId').value) || 0,
@@ -1492,13 +1587,11 @@
         logistics = logLookup.amount;
         logisticsFromTable = true;
         logisticsLabel = logLookup.label + ' · ' + vol.toFixed(2) + ' л';
-        if (price > 0 && logistics > price * 0.4) {
-          const fallbackLog = d.logistics;
-          if (fallbackLog > 0 && fallbackLog < logistics) {
-            logistics = fallbackLog;
-            logisticsLabel = 'лестница тарифов · ' + vol.toFixed(2) + ' л (таблица ' + rub(logLookup.amount) + ')';
-            logisticsFromTable = false;
-          }
+        const ladderLog = d.logistics;
+        if (ladderLog > 0 && (logistics > ladderLog * 2.2 || logistics > price * 0.22)) {
+          logistics = ladderLog;
+          logisticsLabel = 'лестница Ozon · ' + vol.toFixed(2) + ' л (таблица ' + rub(logLookup.amount) + ')';
+          logisticsFromTable = false;
         }
       }
 
@@ -1524,12 +1617,17 @@
     }
 
     function recalc() {
-      const vol = ceilL($('len').value, $('wid').value, $('hei').value);
+      const l = $('len').value;
+      const w = $('wid').value;
+      const h = $('hei').value;
+      const dimVol = volumeFromDimsCm(l, w, h);
+      const vol = volumeForTariff(l, w, h, $('weight').value);
       const volStr = vol.toFixed(2).replace('.', ',');
+      const dimStr = dimVol.toFixed(2).replace('.', ',');
       const kg = ceilKg($('weight').value);
       $('volLabel').textContent = volStr;
-      $('volApi').textContent = volStr;
-      $('wtApi').textContent = String(kg);
+      if ($('volDimLabel')) $('volDimLabel').textContent = dimStr;
+      $('wtApi').textContent = String(kg).replace('.', ',');
       $('priceDisplay').textContent = rub(Number($('price').value));
       if (!state.tariff) state.tariff = defaultTariff(vol, state.scheme, Number($('price').value));
       const r = computeEconomics({
@@ -1558,9 +1656,15 @@
       $('footNote').textContent = r.footNote;
     }
 
-    function schedule() {
+    function scheduleTariff() {
       clearTimeout(debounce);
-      debounce = setTimeout(async () => { await fetchTariff(); recalc(); }, 350);
+      debounce = setTimeout(async () => { await fetchTariff(); recalc(); }, 400);
+    }
+    function schedule() {
+      scheduleTariff();
+    }
+    function recalcLight() {
+      recalc();
     }
 
     function setStatus(on, err) {
@@ -1598,12 +1702,13 @@
 
     function productFromSelectedCategory() {
       if (!state.selectedType) return null;
-      const parts = state.selectedType.label.split(' › ');
+      const t = state.selectedType;
+      const parts = t.label.split(' › ');
       return {
-        commissionCategory: parts[0] || '',
-        commissionType: parts[parts.length - 1] || '',
-        categoryName: parts[0] || '',
-        typeName: parts[parts.length - 1] || '',
+        commissionCategory: t.commissionCategory || parts[0] || '',
+        commissionType: t.commissionType || parts[parts.length - 1] || '',
+        categoryName: t.commissionCategory || parts[0] || '',
+        typeName: t.commissionType || parts[parts.length - 1] || '',
       };
     }
 
@@ -2245,9 +2350,11 @@
 
     function applyCommissionTable(table) {
       state.commissionTable = table;
-      localStorage.setItem(LS_COMMISSION_TABLE, JSON.stringify(table));
+      try {
+        localStorage.setItem(LS_COMMISSION_TABLE, JSON.stringify(table));
+      } catch (_) { /* quota */ }
       updateCommissionHint();
-      recalcAllAssortRows();
+      onCommissionTableReady();
     }
 
     async function importCommissionBuffer(buf) {
@@ -2329,24 +2436,27 @@
     }
 
     async function loadCommissionTable() {
-      try {
-        await loadCommissionFromGoogleSheet(true);
-        return;
-      } catch (sheetErr) {
-        console.warn('Google Sheet commission load failed', sheetErr);
-      }
+      loadCommissionTableFromStorage();
+      if (state.commissionTable?.count) onCommissionTableReady();
       try {
         await loadCommissionFromPublicCsv();
         return;
       } catch (csvErr) {
         console.warn('Public CSV commission load failed', csvErr);
       }
+      if (proxyReady()) {
+        try {
+          await loadCommissionFromGoogleSheet(false);
+          return;
+        } catch (sheetErr) {
+          console.warn('Google Sheet commission load failed', sheetErr);
+        }
+      }
       try {
         const res = await fetch(COMMISSION_TABLE_URL, { cache: 'no-store' });
         if (!res.ok) throw new Error('unit.xlsx не найден');
         await importCommissionBuffer(await res.arrayBuffer());
       } catch (err) {
-        loadCommissionTableFromStorage();
         if (!state.commissionTable?.count) console.warn('Commission table load failed', err);
       }
     }
@@ -2362,7 +2472,11 @@
       if (logLookup?.fromTable) {
         let amount = logLookup.amount;
         let label = logLookup.label;
-        if (apiLog > 0 && amount > Math.max(apiLog * 2.5, price * 0.35)) {
+        const ladderLog = fallback.logistics;
+        if (ladderLog > 0 && (amount > ladderLog * 2.2 || amount > price * 0.22)) {
+          amount = ladderLog;
+          label = 'лестница Ozon · ' + (volL != null ? volL.toFixed(2) + ' л' : '—') + ' (таблица ' + rub(logLookup.amount) + ')';
+        } else if (apiLog > 0 && amount > Math.max(apiLog * 2.5, price * 0.35)) {
           amount = apiLog;
           label = 'логистика API (таблица: ' + rub(logLookup.amount) + ')';
         }
@@ -2502,9 +2616,11 @@
     function applyAssortProducts(products, hintText) {
       state.products = products;
       state.assortmentLoaded = products.length > 0;
+      state.assortmentDomBuilt = false;
       if (hintText) $('assortHint').textContent = hintText;
       $('btnAssortRefresh')?.classList.toggle('hidden', !state.connected);
-      renderAssortment();
+      if (getActiveTabId() === 'tab-assort') renderAssortment();
+      else recalcAllAssortRowsDeferred();
     }
 
     function setAssortRefreshing(on) {
@@ -2722,8 +2838,12 @@
       try {
         const tree = await apiPost('/v1/description-category/tree', { language: 'RU' });
         if (tree.ok) {
-          state.categoryTypes = flattenOzonTypes(tree.data?.result || tree.data?.categories || [], [])
+          const apiTypes = flattenOzonTypes(tree.data?.result || tree.data?.categories || [], [])
             .sort((a, b) => a.label.localeCompare(b.label, 'ru'));
+          const map = new Map();
+          buildCategoryTypesFromCommissionTable().forEach((t) => map.set(t.label, t));
+          apiTypes.forEach((t) => map.set(t.label, t));
+          state.categoryTypes = [...map.values()].sort((a, b) => a.label.localeCompare(b.label, 'ru'));
           initCategoryCombobox();
         }
       } catch (_) {}
@@ -4015,7 +4135,7 @@
         { title: 'Начислено за период', val: net, prev: prevNet, invert: false },
         { title: 'Продажи', val: sales, prev: prevSales, invert: false },
         { title: 'Возвраты', val: returns, prev: prevReturns, invert: true },
-        { title: 'Заказано, шт. (аналитика)', val: units, prev: prevUnits, invert: false, fmt: (n) => (Number.isFinite(n) ? n.toLocaleString('ru-RU') : '—') },
+        { title: 'Заказано, шт. (аналитика за период)', val: units, prev: prevUnits, invert: false, fmt: (n) => (Number.isFinite(n) ? n.toLocaleString('ru-RU') : '—') },
       ];
       $('dashKpis').innerHTML = cards.map((c) => {
         const fmt = c.fmt || rub;
@@ -4271,7 +4391,11 @@
 
     function switchTab(id, opts) {
       if (!id || !document.getElementById(id)) return;
-      try { sessionStorage.setItem(LS_ACTIVE_TAB, id); } catch (_) { /* ignore */ }
+      closeCatCombo();
+      try {
+        sessionStorage.setItem(LS_ACTIVE_TAB, id);
+        if (location.hash !== '#' + id) history.replaceState(null, '', '#' + id);
+      } catch (_) { /* ignore */ }
       document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === id));
       document.querySelectorAll('.tab-panel').forEach((p) => {
         const on = p.id === id;
@@ -4285,9 +4409,12 @@
       });
       if (id === 'tab-assort') {
         if (state.products.length && !state.dataLoading) {
-          renderAssortment({ soft: true });
-        } else if (state.connected && !state.assortmentLoading && !state.assortmentLoaded) {
-          loadAssortment({ background: true }).catch(() => {});
+          if (!state.assortTabMounted || !state.assortmentDomBuilt) {
+            renderAssortment();
+            state.assortTabMounted = true;
+          } else {
+            renderAssortment({ soft: true });
+          }
         }
       }
       if (id === 'tab-analytics' && state.connected) {
@@ -4311,13 +4438,15 @@
         });
       });
       let saved = '';
-      try { saved = sessionStorage.getItem(LS_ACTIVE_TAB) || ''; } catch (_) { /* ignore */ }
-      if (saved && saved !== 'tab-calc' && document.getElementById(saved)) {
+      try { saved = (location.hash || '').replace(/^#/, '') || sessionStorage.getItem(LS_ACTIVE_TAB) || ''; } catch (_) { /* ignore */ }
+      if (saved && document.getElementById(saved)) {
         state.tabsVisited['tab-calc'] = true;
         switchTab(saved);
       } else {
         state.tabsVisited['tab-calc'] = true;
       }
+      window.addEventListener('resize', () => positionCatComboMenu(), { passive: true });
+      window.addEventListener('scroll', () => positionCatComboMenu(), { passive: true });
     }
 
     function setTaxSystem(system, overwriteRate) {
@@ -4353,25 +4482,30 @@
           if (id === 'marketing') $('mktVal').textContent = el.value;
           if (id === 'locIndex') $('locVal').textContent = el.value;
           if (id === 'returns') $('retVal').textContent = el.value;
-          if (['len', 'wid', 'hei', 'weight', 'price', 'priceRange'].includes(id)) schedule();
-          else {
+          if (['len', 'wid', 'hei', 'weight'].includes(id)) {
+            recalcLight();
+            scheduleTariff();
+          } else if (id === 'price' || id === 'priceRange') {
+            recalcLight();
+            scheduleTariff();
+          } else if (['marketing', 'locIndex', 'returns'].includes(id)) {
+            if (id === 'marketing') $('mktVal').textContent = el.value;
+            if (id === 'locIndex') $('locVal').textContent = el.value;
+            if (id === 'returns') $('retVal').textContent = el.value;
+            recalcLight();
+          } else {
             if (id === 'tax') localStorage.setItem(LS_TAX_RATE, el.value);
             if (id === 'vatRate') localStorage.setItem(LS_VAT_RATE, el.value);
             refreshDashTaxFromSettings();
-            recalc();
-            if (['tax', 'vatRate', 'marketing', 'locIndex', 'returns', 'extra'].includes(id)) {
-              if (id === 'marketing') {
-                document.querySelectorAll('[data-ad-drr]').forEach((inp) => {
-                  if (!localStorage.getItem('ad_drr_' + inp.dataset.adDrr)) inp.value = el.value;
-                });
-              }
-              recalcAllAssortRows();
-            }
+            recalcLight();
+            if (['tax', 'vatRate', 'extra'].includes(id)) recalcAllAssortRowsDeferred();
           }
         });
         el.addEventListener('change', () => {
-          if (id === 'premium') schedule();
-          if (id === 'premium') recalcAllAssortRows();
+          if (id === 'premium') {
+            scheduleTariff();
+            recalcAllAssortRowsDeferred();
+          }
         });
       });
       $('taxSystem').addEventListener('change', () => {
@@ -4459,9 +4593,9 @@
         if (state.subscriptionBlocked) return;
         updateSchemeUi();
         setScheme('FBO');
-        recalc();
-        loadCommissionTable().catch(() => {});
+        await loadCommissionTable().catch(() => {});
         loadLogisticsTable().catch(() => {});
+        recalc();
         if (cid && key) {
           const cached = loadAssortCache();
           if (cached?.length) {
