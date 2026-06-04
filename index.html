@@ -573,6 +573,25 @@
         <div class="fs-panel fs-panel--params w-full min-w-0 space-y-4 p-4 sm:p-6">
           <h2 class="fs-panel-title">Параметры</h2>
 
+          <div>
+            <p class="mb-2 text-xs font-semibold uppercase text-slate-500">Категория Ozon</p>
+            <input type="hidden" id="categoryId" value="" />
+            <input type="hidden" id="typeId" value="" />
+            <div id="catCombo" class="relative">
+              <button type="button" id="catComboBtn" disabled class="flex w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left text-sm disabled:cursor-not-allowed disabled:bg-slate-50">
+                <span id="catComboLabel" class="truncate text-slate-600">— подключите API и выберите категорию —</span>
+                <svg class="h-4 w-4 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+              </button>
+              <div id="catComboMenu" class="absolute z-50 mt-1 hidden w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+                <div class="border-b border-slate-100 p-2">
+                  <input id="catComboSearch" type="search" autocomplete="off" placeholder="Поиск по дереву категорий Ozon…" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-ozon focus:outline-none focus:ring-2 focus:ring-ozon/20" />
+                </div>
+                <ul id="catComboList" class="max-h-64 overflow-y-auto py-1 text-sm" role="listbox"></ul>
+                <p id="catComboEmpty" class="hidden px-3 py-4 text-center text-xs text-slate-400">Ничего не найдено</p>
+              </div>
+            </div>
+          </div>
+
           <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <label class="text-sm"><span class="text-slate-500">Длина, см</span><input id="len" type="number" min="1" value="30" class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5" /></label>
             <label class="text-sm"><span class="text-slate-500">Ширина, см</span><input id="wid" type="number" min="1" value="25" class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5" /></label>
@@ -609,19 +628,24 @@
             <label class="block text-sm">
               <span class="text-slate-500">Точка отгрузки FBS</span>
               <select id="fbsDropOff" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                <option value="pvz">ПВЗ / ППЗ — 30 ₽</option>
-                <option value="sc">Сортцентр — 20 ₽</option>
+                <option value="acceptance">В пункте приёма — 10 ₽</option>
+                <option value="pvz">ПВЗ / ППЗ — 30 ₽ + обработка 20 ₽</option>
+                <option value="sc">Сортцентр — 20 ₽ + обработка 20 ₽</option>
                 <option value="pickup">Pick-up (курьеру) — 20 ₽</option>
               </select>
             </label>
-            <p class="text-xs text-slate-400">Плюс обработка отправления 20 ₽ (кроме Pick-up).</p>
+            <p class="text-xs text-slate-400">Как в калькуляторе Ozon: «в пункте приёма» — 10 ₽ за обработку отправления.</p>
           </div>
           <div id="fboClusterWrap" class="hidden space-y-3">
             <label class="flex items-center gap-2 text-sm">
               <input id="fboSameCluster" type="checkbox" class="rounded border-slate-300 text-ozon" />
               <span class="text-slate-600">Доставка в том же кластере, что отгрузка (как в калькуляторе Ozon)</span>
             </label>
-            <p id="fboMarkupNote" class="hidden text-xs text-slate-400">FBO: при нелокальной продаже + наценка 0–12% от цены по кластеру доставки.</p>
+            <label class="flex items-center gap-2 text-sm">
+              <input id="fboNonLocalMarkup" type="checkbox" class="rounded border-slate-300 text-ozon" checked />
+              <span class="text-slate-600">Учесть наценку за нелокальную продажу (FBO)</span>
+            </label>
+            <p id="fboMarkupNote" class="hidden text-xs text-slate-400">Логистика FBO ≈ тариф FBS по маршруту + 0–12% от цены (кластер доставки).</p>
           </div>
           <p id="logisticsHint" class="hidden text-xs text-amber-700"></p>
 
@@ -666,25 +690,6 @@
               <label class="block text-sm"><div class="flex justify-between"><span>Возвраты, %</span><span id="retVal">5</span></div><input id="returns" type="range" min="0" max="30" value="5" class="mt-1 w-full" /></label>
             </div>
           </details>
-
-          <div class="border-t border-slate-100 pt-4">
-            <p class="mb-2 text-xs font-semibold uppercase text-slate-500">Категория Ozon (для API-тарифов)</p>
-            <input type="hidden" id="categoryId" value="" />
-            <input type="hidden" id="typeId" value="" />
-            <div id="catCombo" class="relative">
-              <button type="button" id="catComboBtn" disabled class="flex w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left text-sm disabled:cursor-not-allowed disabled:bg-slate-50">
-                <span id="catComboLabel" class="truncate text-slate-600">— подключите API и выберите категорию —</span>
-                <svg class="h-4 w-4 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-              </button>
-              <div id="catComboMenu" class="absolute z-50 mt-1 hidden w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
-                <div class="border-b border-slate-100 p-2">
-                  <input id="catComboSearch" type="search" autocomplete="off" placeholder="Поиск по дереву категорий Ozon…" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-ozon focus:outline-none focus:ring-2 focus:ring-ozon/20" />
-                </div>
-                <ul id="catComboList" class="max-h-64 overflow-y-auto py-1 text-sm" role="listbox"></ul>
-                <p id="catComboEmpty" class="hidden px-3 py-4 text-center text-xs text-slate-400">Ничего не найдено</p>
-              </div>
-            </div>
-          </div>
         </div>
 
         <div class="fs-panel w-full min-w-0 p-4 sm:p-6">
@@ -885,6 +890,7 @@
     const LS_FBS_ORIGIN = 'ozon_ue_fbs_origin';
     const LS_FBO_DEST = 'ozon_ue_fbo_dest';
     const LS_LOGISTICS_DEST = 'ozon_ue_logistics_dest';
+    const LS_FBO_NONLOCAL_MARKUP = 'ozon_ue_fbo_nonlocal_markup';
     const LS_FBS_DROPOFF = 'ozon_ue_fbs_dropoff';
     const LS_LOCAL_DELIVERY = 'ozon_ue_local_delivery';
     const LS_LOGISTICS_TABLE = 'ozon_ue_logistics_table';
@@ -960,10 +966,14 @@
       return isLocalDelivery();
     }
     function getFbsFees() {
-      const mode = $('fbsDropOff')?.value || localStorage.getItem(LS_FBS_DROPOFF) || 'pvz';
+      const mode = $('fbsDropOff')?.value || localStorage.getItem(LS_FBS_DROPOFF) || 'acceptance';
+      if (mode === 'acceptance') return { dropOff: 0, processing: 10, label: 'В пункте приёма' };
       if (mode === 'pickup') return { dropOff: 0, processing: 20, label: 'Pick-up' };
       if (mode === 'sc') return { dropOff: 20, processing: 20, label: 'СЦ' };
       return { dropOff: 30, processing: 20, label: 'ПВЗ/ППЗ' };
+    }
+    function fboNonLocalMarkupEnabled() {
+      return $('fboNonLocalMarkup')?.checked ?? localStorage.getItem(LS_FBO_NONLOCAL_MARKUP) !== '0';
     }
     function fboMarkupPct(clusterName) {
       const n = normCluster(clusterName || '');
@@ -988,6 +998,7 @@
       return clusterMatches($('fbsOrigin')?.value, $('logisticsDest')?.value);
     }
     function fboApplyMarkup() {
+      if (!fboNonLocalMarkupEnabled()) return false;
       if (isLocalDelivery()) return false;
       if (clustersSameRoute()) return false;
       return true;
@@ -1381,19 +1392,34 @@
     function buildLogisticsTariff(vol, scheme, price, localSale) {
       const d = defaultTariff(vol, scheme, price);
       const origin = $('fbsOrigin')?.value || '';
-      const logLookup = lookupLogistics(vol, scheme, origin, localSale, price, logisticsDestCluster());
+      const dest = logisticsDestCluster();
       let logisticsCore = d.logisticsCore;
       let logisticsFromTable = false;
       let logisticsLabel = '';
-      if (logLookup?.fromTable && logLookup.amount != null) {
-        logisticsCore = logLookup.amount;
-        logisticsFromTable = true;
-        logisticsLabel = logLookup.label;
-      } else if (logLookup?.fallbackLadder) {
-        logisticsLabel = 'оценка (таблица: ' + rub(logLookup.rawAmount) + ')';
+      let markupPct = 0;
+      let markupInLogistics = false;
+      if (scheme === 'FBO' && fboApplyMarkup()) {
+        const fbsLookup = lookupLogistics(vol, 'FBS', origin, false, price, dest);
+        if (fbsLookup?.fromTable && fbsLookup.amount != null) {
+          const pct = fboMarkupPct(dest);
+          logisticsCore = fbsLookup.amount + price * (pct / 100);
+          logisticsFromTable = true;
+          markupInLogistics = true;
+          logisticsLabel = 'FBO · ' + origin + ' → ' + dest + ' (FBS ' + rub(fbsLookup.amount) + ' + ' + pct + '%)';
+        }
+      }
+      if (!logisticsFromTable) {
+        const logLookup = lookupLogistics(vol, scheme, origin, localSale, price, dest);
+        if (logLookup?.fromTable && logLookup.amount != null) {
+          logisticsCore = logLookup.amount;
+          logisticsFromTable = true;
+          logisticsLabel = logLookup.label;
+        }
+      }
+      if (!markupInLogistics && scheme === 'FBO' && fboApplyMarkup()) {
+        markupPct = fboMarkupPct(dest);
       }
       const fbsFees = scheme === 'FBS' ? getFbsFees() : null;
-      const markupPct = scheme === 'FBO' && fboApplyMarkup() ? fboMarkupPct(fboDeliveryCluster()) : 0;
       return {
         commissionPct: d.commissionPct,
         logistics: logisticsCore,
@@ -1438,14 +1464,17 @@
           logisticsCore = Number(tariff.logisticsCore ?? tariff.logistics) || 0;
         }
         const fees = tariff.fbsFees || getFbsFees();
-        const dropOff = Number(fees.dropOff) || 0;
         const processing = Number(fees.processing) || 0;
-        if (dropOff) logRows.push({ t: 'Отгрузка FBS (' + (fees.label || '') + ')', v: dropOff });
+        const dropOff = Number(fees.dropOff) || 0;
         if (processing) logRows.push({ t: 'Обработка отправления FBS', v: processing });
-        logRows.unshift({
+        else if (dropOff) logRows.push({ t: 'Обработка отправления FBS', v: dropOff });
+        logRows.push({
           t: tariff.logisticsFromTable ? 'Логистика FBS (таблица)' : 'Логистика FBS (оценка)',
           v: logisticsCore,
         });
+        if (tariff.logisticsFromTable || tariff.apiExact) {
+          logRows.push({ t: 'Доставка до места выдачи', v: LAST_MILE });
+        }
       } else if (scheme === 'FBO') {
         let lastMile = 0;
         if (tariff.logisticsFromTable) {
@@ -4767,6 +4796,11 @@
         updateFboMarkupUi();
         applyLogisticsRecalcNow();
       });
+      $('fboNonLocalMarkup')?.addEventListener('change', () => {
+        localStorage.setItem(LS_FBO_NONLOCAL_MARKUP, $('fboNonLocalMarkup').checked ? '1' : '0');
+        updateFboMarkupUi();
+        applyLogisticsRecalcNow();
+      });
     }
 
     async function init() {
@@ -4780,6 +4814,9 @@
         $('vatRate').value = localStorage.getItem(LS_VAT_RATE) ?? '0';
         if (localStorage.getItem(LS_FBO_SAME_CLUSTER) === '1' && $('fboSameCluster')) {
           $('fboSameCluster').checked = true;
+        }
+        if ($('fboNonLocalMarkup')) {
+          $('fboNonLocalMarkup').checked = localStorage.getItem(LS_FBO_NONLOCAL_MARKUP) !== '0';
         }
         if ($('localDelivery')) $('localDelivery').checked = localStorage.getItem(LS_LOCAL_DELIVERY) === '1';
         const drop = localStorage.getItem(LS_FBS_DROPOFF);
