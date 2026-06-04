@@ -579,8 +579,7 @@
             <label class="text-sm"><span class="text-slate-500">Высота, см</span><input id="hei" type="number" min="1" value="8" class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5" /></label>
             <label class="text-sm"><span class="text-slate-500">Вес, кг</span><input id="weight" type="number" min="0.1" step="0.1" value="1.2" class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5" /></label>
           </div>
-          <p class="text-xs text-slate-500">Габаритный объём: <span id="volDimLabel">6,00</span> л · для тарифов: <strong id="volLabel">6,00</strong> л · вес: <span id="wtApi">1</span> кг</p>
-          <p id="volHint" class="text-xs text-amber-700"></p>
+          <p class="text-xs text-slate-500">Объём для тарифа: <strong id="volLabel">6,00</strong> л <span class="text-slate-400">(30×25×8 см)</span> · вес: <span id="wtApi">1,2</span> кг</p>
           <p id="commissionHint" class="hidden text-xs text-emerald-700"></p>
 
           <div class="grid grid-cols-2 gap-3">
@@ -595,11 +594,18 @@
               <button type="button" class="scheme-btn flex-1 rounded-xl border-2 border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600" data-scheme="FBS">FBS</button>
             </div>
           </div>
-          <div id="fbsOriginWrap" class="hidden space-y-3">
+          <div id="logisticsRouteWrap" class="hidden space-y-3">
             <label class="block text-sm">
-              <span class="text-slate-500">Кластер отгрузки FBS</span>
+              <span class="text-slate-500">Кластер отгрузки</span>
               <select id="fbsOrigin" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"></select>
             </label>
+            <label class="block text-sm">
+              <span class="text-slate-500">Кластер доставки</span>
+              <select id="logisticsDest" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"></select>
+              <p class="mt-1 text-xs text-slate-400">Как в калькуляторе Ozon: тариф логистики по маршруту «отгрузка → доставка» и объёму в литрах.</p>
+            </label>
+          </div>
+          <div id="fbsOriginWrap" class="hidden space-y-3">
             <label class="block text-sm">
               <span class="text-slate-500">Точка отгрузки FBS</span>
               <select id="fbsDropOff" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
@@ -608,18 +614,14 @@
                 <option value="pickup">Pick-up (курьеру) — 20 ₽</option>
               </select>
             </label>
-            <p class="text-xs text-slate-400">Логистика из таблицы + отгрузка + обработка 20 ₽ (кроме Pick-up, где 20 ₽ за отправление).</p>
+            <p class="text-xs text-slate-400">Плюс обработка отправления 20 ₽ (кроме Pick-up).</p>
           </div>
           <div id="fboClusterWrap" class="hidden space-y-3">
             <label class="flex items-center gap-2 text-sm">
               <input id="fboSameCluster" type="checkbox" class="rounded border-slate-300 text-ozon" />
-              <span class="text-slate-600">Заказ в том же кластере, что склад (мин. тариф, без наценки)</span>
+              <span class="text-slate-600">Доставка в том же кластере, что отгрузка (как в калькуляторе Ozon)</span>
             </label>
-            <label id="fboMarkupWrap" class="block text-sm">
-              <span class="text-slate-500">Кластер покупателя (наценка FBO, если продажа нелокальная)</span>
-              <select id="fboDestCluster" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"></select>
-              <p class="mt-1 text-xs text-slate-400">Только % сверху к логистике (0–12% от цены). На сам тариф перевозки не влияет.</p>
-            </label>
+            <p id="fboMarkupNote" class="hidden text-xs text-slate-400">FBO: при нелокальной продаже + наценка 0–12% от цены по кластеру доставки.</p>
           </div>
           <p id="logisticsHint" class="hidden text-xs text-amber-700"></p>
 
@@ -882,6 +884,7 @@
     const LS_FBO_SAME_CLUSTER = 'ozon_ue_fbo_same_cluster';
     const LS_FBS_ORIGIN = 'ozon_ue_fbs_origin';
     const LS_FBO_DEST = 'ozon_ue_fbo_dest';
+    const LS_LOGISTICS_DEST = 'ozon_ue_logistics_dest';
     const LS_FBS_DROPOFF = 'ozon_ue_fbs_dropoff';
     const LS_LOCAL_DELIVERY = 'ozon_ue_local_delivery';
     const LS_LOGISTICS_TABLE = 'ozon_ue_logistics_table';
@@ -969,8 +972,17 @@
       const hit = Object.keys(FBO_NONLOCAL_MARKUP).find((k) => n.includes(k) || k.includes(n));
       return hit != null ? FBO_NONLOCAL_MARKUP[hit] : 8;
     }
+    function logisticsDestCluster() {
+      return $('logisticsDest')?.value || $('fbsOrigin')?.value || '';
+    }
     function fboDeliveryCluster() {
-      return $('fboDestCluster')?.value || $('fbsOrigin')?.value || '';
+      return logisticsDestCluster();
+    }
+    function displayWeightKg(w) {
+      const kg = Number(w);
+      if (!Number.isFinite(kg) || kg <= 0) return '—';
+      const s = (Math.round(kg * 100) / 100).toFixed(2).replace(/\.?0+$/, '').replace('.', ',');
+      return s;
     }
     function fboApplyMarkup() {
       if (isLocalDelivery()) return false;
@@ -1025,7 +1037,7 @@
     function ceilL(l, w, h) {
       return Math.ceil(((Number(l) * Number(w) * Number(h)) / 1000) * 100) / 100;
     }
-    /** Объём для тарифов: как в ЛК Ozon — volume_weight, иначе min(габариты, вес в кг). */
+    /** Объём в литрах из габаритов (см или мм — как в калькуляторе Ozon: 30×25×8 см = 6 л). */
     function volumeFromDimsCm(l, w, h) {
       const len = Number(l) || 0;
       const wid = Number(w) || 0;
@@ -1034,14 +1046,16 @@
       if (Math.max(len, wid, hei) >= 50) return (len * wid * hei) / 1_000_000;
       return ceilL(len, wid, hei);
     }
+    /** Объём для тарифов: габариты в литрах; если габаритов нет — оценка по весу (кг). */
     function volumeForTariff(l, w, h, weightKg) {
       const dim = volumeFromDimsCm(l, w, h);
+      if (dim > 0) return Math.ceil(dim * 100) / 100;
       const kg = Number(weightKg) || 0;
-      if (kg > 0 && kg <= 190 && (dim <= 0 || kg < dim)) return Math.ceil(kg * 100) / 100;
-      return Math.ceil((dim || kg) * 100) / 100;
+      if (kg > 0) return Math.ceil(kg * 100) / 100;
+      return 0.01;
     }
 
-    /** Объём в литрах: Ozon API отдаёт габариты в мм; приоритет — volume_weight из ЛК. */
+    /** Объём SKU: volume_weight из API/ЛК, иначе габариты (мм → л). */
     function productVolumeLiters(product) {
       const vw = Number(product?.volume_weight);
       if (Number.isFinite(vw) && vw > 0 && vw <= 190) {
@@ -1058,8 +1072,6 @@
         dim = ceilL(d, w, h);
       }
       dim = Math.ceil(dim * 100) / 100;
-      const weightKg = (Number(product?.weight) || 0) / 1000;
-      if (weightKg > 0 && weightKg < dim) return Math.ceil(weightKg * 100) / 100;
       if (dim > 190 && Number.isFinite(vw) && vw > 0) return Math.ceil(vw * 100) / 100;
       return dim > 0 ? dim : null;
     }
@@ -1366,7 +1378,7 @@
     function buildLogisticsTariff(vol, scheme, price, localSale) {
       const d = defaultTariff(vol, scheme, price);
       const origin = $('fbsOrigin')?.value || '';
-      const logLookup = lookupLogistics(vol, scheme, origin, localSale, price);
+      const logLookup = lookupLogistics(vol, scheme, origin, localSale, price, logisticsDestCluster());
       let logisticsCore = d.logisticsCore;
       let logisticsFromTable = false;
       let logisticsLabel = '';
@@ -1435,6 +1447,7 @@
         let lastMile = 0;
         if (tariff.logisticsFromTable) {
           logisticsCore = Number(tariff.logisticsCore ?? tariff.logistics) || 0;
+          lastMile = LAST_MILE;
         } else if (tariff.apiExact) {
           logisticsCore = Number(tariff.logisticsCore ?? tariff.logistics) || 0;
           lastMile = Number(tariff.lastMile) || 0;
@@ -1704,25 +1717,13 @@
       const dimVol = volumeFromDimsCm(l, w, h);
       const vol = volumeForTariff(l, w, h, $('weight').value);
       const volStr = vol.toFixed(2).replace('.', ',');
-      const dimStr = dimVol.toFixed(2).replace('.', ',');
-      const kg = ceilKg($('weight').value);
       $('volLabel').textContent = volStr;
-      if ($('volDimLabel')) {
-        $('volDimLabel').textContent = dimStr;
-        if (dimVol > vol + 0.05) {
-          $('volDimLabel').title = 'Для тарифа Ozon берёт min(габариты, вес): ' + volStr + ' л';
-        } else {
-          $('volDimLabel').title = '';
-        }
+      const dimNote = $('volLabel')?.parentElement?.querySelector('.text-slate-400');
+      if (dimNote) {
+        dimNote.textContent = '(' + (Number(l) || 0) + '×' + (Number(w) || 0) + '×' + (Number(h) || 0) + ' см)';
       }
-      const volHint = $('volHint');
-      if (volHint) {
-        volHint.textContent = dimVol > vol + 0.05
-          ? 'Ozon для тарифа берёт ' + volStr + ' л (вес), а не габаритные ' + dimStr + ' л — смена высоты/длины не изменит логистику, пока вес не больше объёма.'
-          : '';
-      }
+      $('wtApi').textContent = displayWeightKg($('weight').value);
       syncCalcTariff();
-      $('wtApi').textContent = String(kg).replace('.', ',');
       $('priceDisplay').textContent = rub(Number($('price').value));
       if (!state.tariff) state.tariff = defaultTariff(vol, state.scheme, Number($('price').value));
       const r = computeEconomics({
@@ -1961,6 +1962,16 @@
       const sane = prices.filter((p) => Number.isFinite(p) && p > 0 && p <= cap);
       return sane.length ? sane : prices.filter((p) => Number.isFinite(p) && p > 0);
     }
+    function pickRouteAmount(pool, originName, destName, vol, scheme, salePrice) {
+      if (!pool.length || !originName || !destName) return null;
+      const route = pool.filter(
+        (e) => clusterMatches(e.origin, originName) && clusterMatches(e.dest, destName)
+      );
+      if (!route.length) return null;
+      const prices = saneLogisticsPrices(route.map((e) => e.price), vol, scheme, salePrice);
+      if (!prices.length) return null;
+      return prices.length === 1 ? prices[0] : Math.min(...prices);
+    }
     function pickPoolAmount(pool, local, vol, scheme, salePrice) {
       if (!pool.length) return null;
       const same = pool.filter((e) => clusterMatches(e.origin, e.dest));
@@ -2053,7 +2064,7 @@
       };
     }
 
-    function lookupLogistics(vol, scheme, originCluster, localSale, salePrice) {
+    function lookupLogistics(vol, scheme, originCluster, localSale, salePrice, destCluster) {
       const table = state.logisticsTables?.[scheme];
       if (!table?.entries?.length) return null;
       const v = Number(vol);
@@ -2079,33 +2090,27 @@
       if (!matched.length) return null;
       const local = localSale != null ? !!localSale : isLocalDelivery();
       const originName = originCluster || $('fbsOrigin')?.value || '';
-      if (scheme === 'FBS') {
-        let pool = matched;
-        if (originName) {
-          const byOrigin = matched.filter((e) => clusterMatches(e.origin, originName));
-          if (byOrigin.length) pool = byOrigin;
-        }
-        const amount = pickPoolAmount(pool, local, v, scheme, price);
-        if (amount == null) return null;
-        return {
-          amount,
-          fromTable: true,
-          label: (local ? 'FBS мин.' : 'FBS макс.') + ' · ' + originName,
-        };
-      }
-      const fboSame = local || !!$('fboSameCluster')?.checked;
+      const destName = destCluster || logisticsDestCluster() || (local || $('fboSameCluster')?.checked ? originName : '');
       let pool = matched;
       if (originName) {
         const byOrigin = matched.filter((e) => clusterMatches(e.origin, originName));
         if (byOrigin.length) pool = byOrigin;
       }
-      const amount = pickPoolAmount(pool, fboSame, v, scheme, price);
+      let amount = null;
+      let label = '';
+      if (originName && destName) {
+        amount = pickRouteAmount(pool, originName, destName, v, scheme, price);
+        if (amount != null) {
+          label = (scheme === 'FBS' ? 'FBS' : 'FBO') + ' · ' + originName + ' → ' + destName;
+        }
+      }
+      if (amount == null) {
+        const fboSame = scheme === 'FBO' && (local || !!$('fboSameCluster')?.checked);
+        amount = pickPoolAmount(pool, scheme === 'FBS' ? local : fboSame, v, scheme, price);
+        label = (scheme === 'FBS' ? (local ? 'FBS мин.' : 'FBS макс.') : (fboSame ? 'FBO мин.' : 'FBO макс.')) + ' · ' + originName;
+      }
       if (amount == null) return null;
-      return {
-        amount,
-        fromTable: true,
-        label: (fboSame ? 'FBO мин.' : 'FBO макс.') + ' · ' + (originName || 'таблица'),
-      };
+      return { amount, fromTable: true, label };
     }
 
     function fillClusterSelect(sel, origins, savedKey) {
@@ -2129,9 +2134,17 @@
       else sel.value = origins[0];
     }
 
-    function fillFbsOriginSelect(origins) {
-      fillClusterSelect($('fbsOrigin'), origins, LS_FBS_ORIGIN);
-      fillClusterSelect($('fboDestCluster'), origins, LS_FBO_DEST);
+    function fillLogisticsClusterSelects(table) {
+      const origins = [...new Set((table?.entries || []).map((e) => e.origin).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru'));
+      const dests = [...new Set((table?.entries || []).map((e) => e.dest).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru'));
+      fillClusterSelect($('fbsOrigin'), origins.length ? origins : (table?.origins || []), LS_FBS_ORIGIN);
+      fillClusterSelect($('logisticsDest'), dests.length ? dests : origins, LS_LOGISTICS_DEST);
+      const legacyDest = localStorage.getItem(LS_FBO_DEST);
+      if (legacyDest && !$('logisticsDest').value) {
+        const match = [...$('logisticsDest').options].find((o) => clusterMatches(o.value, legacyDest));
+        if (match) $('logisticsDest').value = match.value;
+      }
+      $('logisticsRouteWrap')?.classList.toggle('hidden', !origins.length && !dests.length);
     }
 
     function setLogisticsHint(msg) {
@@ -2148,13 +2161,26 @@
 
     function updateSchemeUi() {
       const fbs = state.scheme === 'FBS';
+      $('logisticsRouteWrap')?.classList.toggle('hidden', !state.logisticsReady);
       $('fbsOriginWrap')?.classList.toggle('hidden', !fbs);
       $('fboClusterWrap')?.classList.toggle('hidden', fbs);
       updateFboMarkupUi();
     }
     function updateFboMarkupUi() {
-      const show = state.scheme === 'FBO' && !isLocalDelivery() && !$('fboSameCluster')?.checked;
-      $('fboMarkupWrap')?.classList.toggle('hidden', !show);
+      const sameRoute = !!$('fboSameCluster')?.checked || clusterMatches($('fbsOrigin')?.value, $('logisticsDest')?.value);
+      const showNote = state.scheme === 'FBO' && !isLocalDelivery() && !sameRoute;
+      $('fboMarkupNote')?.classList.toggle('hidden', !showNote);
+    }
+    function syncSameClusterDest() {
+      if (!$('fboSameCluster')?.checked) return;
+      const origin = $('fbsOrigin')?.value;
+      if (!origin || !$('logisticsDest')) return;
+      for (const opt of $('logisticsDest').options) {
+        if (clusterMatches(opt.value, origin)) {
+          $('logisticsDest').value = opt.value;
+          break;
+        }
+      }
     }
     function syncCalcTariff() {
       const p = payload();
@@ -2303,7 +2329,11 @@
         ...(state.logisticsTables.FBS?.origins || []),
         ...(state.logisticsTables.FBO?.origins || []),
       ])].sort((a, b) => a.localeCompare(b, 'ru'));
-      fillFbsOriginSelect(origins);
+      const allEntries = [
+        ...(state.logisticsTables.FBS?.entries || []),
+        ...(state.logisticsTables.FBO?.entries || []),
+      ];
+      fillLogisticsClusterSelects({ entries: allEntries, origins });
       state.logisticsReady = !!(state.logisticsTables.FBS?.entries?.length);
       if (state.logisticsReady) {
         localStorage.setItem(LS_LOGISTICS_TABLE, JSON.stringify({
@@ -2322,6 +2352,7 @@
         $('logisticsHint')?.classList.add('text-amber-700');
         setLogisticsHint(state.logisticsError || 'Таблица логистики не загружена.');
       }
+      updateSchemeUi();
       await applyLogisticsRecalc();
     }
 
@@ -4701,12 +4732,15 @@
         localStorage.setItem(LS_FBS_DROPOFF, $('fbsDropOff').value);
         applyLogisticsRecalcNow();
       });
-      $('fboDestCluster')?.addEventListener('change', () => {
-        localStorage.setItem(LS_FBO_DEST, $('fboDestCluster').value);
+      $('logisticsDest')?.addEventListener('change', () => {
+        localStorage.setItem(LS_LOGISTICS_DEST, $('logisticsDest').value);
+        localStorage.setItem(LS_FBO_DEST, $('logisticsDest').value);
+        updateFboMarkupUi();
         applyLogisticsRecalcNow();
       });
       $('fboSameCluster')?.addEventListener('change', () => {
         localStorage.setItem(LS_FBO_SAME_CLUSTER, $('fboSameCluster').checked ? '1' : '0');
+        syncSameClusterDest();
         updateFboMarkupUi();
         applyLogisticsRecalcNow();
       });
@@ -4730,6 +4764,15 @@
         if ($('localDelivery')) $('localDelivery').checked = localStorage.getItem(LS_LOCAL_DELIVERY) === '1';
         const drop = localStorage.getItem(LS_FBS_DROPOFF);
         if (drop && $('fbsDropOff')) $('fbsDropOff').value = drop;
+        const savedDest = localStorage.getItem(LS_LOGISTICS_DEST) || localStorage.getItem(LS_FBO_DEST);
+        if (savedDest && $('logisticsDest')) {
+          for (const opt of $('logisticsDest').options) {
+            if (clusterMatches(opt.value, savedDest)) {
+              $('logisticsDest').value = opt.value;
+              break;
+            }
+          }
+        }
         state.tariff = defaultTariff(ceilL(30, 25, 8), 'FBO', 2490);
         initTelegramWebApp();
         bind();
