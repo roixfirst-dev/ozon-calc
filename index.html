@@ -12,6 +12,21 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <!-- Yandex.Metrika counter -->
+  <script>
+    (function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+    m[i].l=1*new Date();
+    for (var j=0;j<document.scripts.length;j++){if(document.scripts[j].src===r){return;}}
+    k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})
+    (window,document,'script','https://mc.yandex.ru/metrika/tag.js','ym');
+    ym(109683427,'init',{
+      clickmap:true,
+      trackLinks:true,
+      accurateTrackBounce:true,
+      webvisor:true,
+      trackHash:true
+    });
+  </script>
   <script>
     tailwind.config = {
       theme: {
@@ -419,6 +434,7 @@
   </style>
 </head>
 <body class="min-h-screen w-full text-slate-800 antialiased">
+  <noscript><div><img src="https://mc.yandex.ru/watch/109683427" style="position:absolute;left:-9999px;" alt="" /></div></noscript>
 
   <div id="appRoot" class="app-root">
   <header class="fs-header w-full">
@@ -717,6 +733,7 @@
     const COMMISSION_SHEET_ID = '1Kh31uRcKJJ5SU-TZHBtsBlZ4W4SH9QzT1eJA78dcBtY';
     const LOGISTICS_SHEET_ID = '1FNqyAsIcI3wCrVvqnQmo1gEWdOzsp00Z64eKhpNgy7Y';
     const COMMISSION_TABLE_URL = 'unit.xlsx';
+    const METRIKA_ID = 109683427;
     const ACQUIRING_RATE = 1;
     const PREMIUM = 2.5;
     const LAST_MILE = 25;
@@ -730,6 +747,18 @@
       'туркменистан': 0, 'тюмень': 8, 'узбекистан': 0, 'уфа': 8, 'ярославль': 8,
     };
     const $ = (id) => document.getElementById(id);
+    function reachGoal(goal, params) {
+      try {
+        if (typeof ym === 'function') ym(METRIKA_ID, 'reachGoal', goal, params || {});
+      } catch (_) { /* ignore */ }
+    }
+    function trackAppOpen() {
+      try {
+        if (sessionStorage.getItem('fs_metrika_open')) return;
+        sessionStorage.setItem('fs_metrika_open', '1');
+      } catch (_) { /* ignore */ }
+      reachGoal('fs_open', { from: tg?.initData ? 'telegram' : 'web' });
+    }
     const state = {
       connected: false, scheme: 'FBO', categoryTypes: [], selectedType: null,
       tariff: null, tariffSource: 'базовые тарифы Ozon', products: [],       rowSchemes: {}, rowLocalSale: {},
@@ -2838,6 +2867,7 @@
             if (fromApi) {
               saveAssortCache(products);
               $('assortHint').textContent = 'Загружено из Ozon API: ' + products.length + ' SKU';
+              reachGoal('fs_assortment_loaded', { sku: products.length });
             }
           }
         } catch (_) {
@@ -3218,6 +3248,7 @@
         showAuthError('Укажите Client-ID и API-Key');
         return;
       }
+      if (!background) reachGoal('fs_api_click');
       if (cid) localStorage.setItem(LS_CID, cid);
       if (key) localStorage.setItem(LS_KEY, key);
       $('authError').classList.add('hidden');
@@ -3238,6 +3269,7 @@
           setStatus(false);
           state.assortmentLoaded = false;
           showAuthError('Неверный Client-ID или API-Key');
+          if (!background) reachGoal('fs_api_error', { reason: 'auth' });
           if (!background) setAppLoading(false);
           state.connectRunning = false;
           return;
@@ -3245,6 +3277,7 @@
         if (!ok) {
           setStatus(false);
           if (!background) setAppLoading(false);
+          if (!background) reachGoal('fs_api_error', { reason: String(status || 'fail') });
           if (status === 503) {
             showAuthError(
               (raw?.error || raw?.message || 'Нет доступа к Google Таблице Users.') +
@@ -3259,6 +3292,7 @@
           return;
         }
         setStatus(true);
+        if (!background) reachGoal('fs_api_connected');
         $('btnAssortRefresh')?.classList.remove('hidden');
         const skipAssort = !force && background && state.assortmentLoaded && state.products.length > 0;
         if (!skipAssort && !background && !state.products.length) {
@@ -3503,6 +3537,7 @@
         state.tariff = defaultTariff(ceilL(30, 25, 8), 'FBO', 2490);
         initTelegramWebApp();
         bind();
+        trackAppOpen();
         await verifySubscriptionOnStart();
         if (state.subscriptionBlocked) return;
         updateSchemeUi();
