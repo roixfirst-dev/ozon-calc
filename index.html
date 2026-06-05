@@ -496,7 +496,7 @@
           <label class="block text-sm">
             <span class="text-slate-500">Точка отгрузки</span>
             <select id="fbsDropOff" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
-              <option value="acceptance">В пункте приёма — 10 ₽</option>
+              <option value="acceptance">В пункте приёма — 10–30 ₽</option>
               <option value="pvz">ПВЗ / ППЗ — 30 ₽ + обработка 20 ₽</option>
               <option value="sc">Сортцентр — 20 ₽ + обработка 20 ₽</option>
               <option value="pickup">Pick-up (курьеру) — 20 ₽</option>
@@ -505,15 +505,13 @@
         </div>
         <div id="fboClusterWrap" class="space-y-2 rounded-xl border border-slate-100 bg-slate-50/80 p-3">
           <p class="text-xs font-semibold uppercase text-slate-500">FBO</p>
-          <label class="flex items-center gap-2 text-sm">
-            <input id="fboSameCluster" type="checkbox" class="rounded border-slate-300 text-ozon" />
-            <span class="text-slate-600">Доставка в том же кластере, что отгрузка</span>
-          </label>
-          <label class="flex items-center gap-2 text-sm">
-            <input id="fboNonLocalMarkup" type="checkbox" class="rounded border-slate-300 text-ozon" checked />
-            <span class="text-slate-600">Наценка за нелокальную продажу</span>
-          </label>
-          <p id="fboMarkupNote" class="hidden text-xs text-slate-400">FBO: тариф FBS по маршруту + 0–12% от цены.</p>
+          <div id="fboNonLocalWrap" class="space-y-2">
+            <label class="flex items-start gap-2 text-sm">
+              <input id="fboNonLocalMarkup" type="checkbox" class="mt-0.5 rounded border-slate-300 text-ozon" checked />
+              <span class="text-slate-600">Учесть наценку за нелокальную продажу <span id="fboMarkupPctHint" class="text-slate-400"></span></span>
+            </label>
+            <p id="fboMarkupNote" class="text-xs text-slate-400">Логистика FBO = тариф FBS по маршруту + процент от цены товара.</p>
+          </div>
         </div>
       </div>
       <p id="logisticsHint" class="hidden text-xs text-amber-700"></p>
@@ -704,7 +702,6 @@
     const LS_TAX_SYSTEM = 'ozon_ue_tax_system';
     const LS_TAX_RATE = 'ozon_ue_tax_rate';
     const LS_VAT_RATE = 'ozon_ue_vat_rate';
-    const LS_FBO_SAME_CLUSTER = 'ozon_ue_fbo_same_cluster';
     const LS_FBS_ORIGIN = 'ozon_ue_fbs_origin';
     const LS_FBO_DEST = 'ozon_ue_fbo_dest';
     const LS_LOGISTICS_DEST = 'ozon_ue_logistics_dest';
@@ -802,7 +799,11 @@
     }
     function getFbsFees() {
       const mode = $('fbsDropOff')?.value || localStorage.getItem(LS_FBS_DROPOFF) || 'acceptance';
-      if (mode === 'acceptance') return { dropOff: 0, processing: 10, label: 'В пункте приёма' };
+      if (mode === 'acceptance') {
+        // Ozon: локальный маршрут — обработка 30 ₽; межкластерный — 10 ₽ (как СПб→Саратов)
+        const processing = clustersSameRoute() ? 30 : 10;
+        return { dropOff: 0, processing, label: 'В пункте приёма' };
+      }
       if (mode === 'pickup') return { dropOff: 0, processing: 20, label: 'Pick-up' };
       if (mode === 'sc') return { dropOff: 20, processing: 20, label: 'СЦ' };
       return { dropOff: 30, processing: 20, label: 'ПВЗ/ППЗ' };
@@ -1257,11 +1258,11 @@
         } else if (tariff.apiExact) {
           logisticsCore = Number(tariff.logisticsCore ?? tariff.logistics) || 0;
         }
-        const fees = tariff.fbsFees || getFbsFees();
+        const fees = getFbsFees();
         const processing = Number(fees.processing) || 0;
         const dropOff = Number(fees.dropOff) || 0;
         if (processing) logRows.push({ t: 'Обработка отправления FBS', v: processing });
-        else if (dropOff) logRows.push({ t: 'Обработка отправления FBS', v: dropOff });
+        if (dropOff) logRows.push({ t: 'Сдача в ' + (fees.label || 'точку отгрузки'), v: dropOff });
         logRows.push({
           t: tariff.logisticsFromTable ? 'Логистика FBS (таблица)' : 'Логистика FBS (оценка)',
           v: logisticsCore,
@@ -1932,7 +1933,7 @@
         }
       }
       if (amount == null) {
-        const fboSame = scheme === 'FBO' && (local || !!$('fboSameCluster')?.checked);
+        const fboSame = scheme === 'FBO' && (local || clustersSameRoute());
         amount = pickPoolAmount(pool, scheme === 'FBS' ? local : fboSame, v, scheme, price);
         label = (scheme === 'FBS' ? (local ? 'FBS мин.' : 'FBS макс.') : (fboSame ? 'FBO мин.' : 'FBO макс.')) + ' · ' + originName;
       }
@@ -1961,11 +1962,49 @@
       else sel.value = origins[0];
     }
 
+    function destClusterOptionLabel(destName, originName) {
+      if (originName && clusterMatches(destName, originName)) return destName;
+      const pct = fboMarkupPct(destName);
+      if (pct > 0) return destName + ' — наценка ' + pct + '%';
+      return destName + ' — без наценки';
+    }
+
+    function fillDestClusterSelect(sel, dests, preferredValue) {
+      if (!sel) return;
+      const origin = $('fbsOrigin')?.value || '';
+      const saved = preferredValue ?? sel.value ?? localStorage.getItem(LS_LOGISTICS_DEST) ?? '';
+      sel.innerHTML = '';
+      if (!dests?.length) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = '— таблица не загружена —';
+        sel.appendChild(opt);
+        return;
+      }
+      dests.forEach((d) => {
+        const opt = document.createElement('option');
+        opt.value = d;
+        opt.textContent = destClusterOptionLabel(d, origin);
+        sel.appendChild(opt);
+      });
+      if (saved && dests.includes(saved)) sel.value = saved;
+      else sel.value = dests[0];
+    }
+
+    function refreshDestClusterLabels() {
+      const sel = $('logisticsDest');
+      if (!sel) return;
+      const dests = [...sel.options].map((o) => o.value).filter(Boolean);
+      if (!dests.length) return;
+      fillDestClusterSelect(sel, dests, sel.value);
+    }
+
     function fillLogisticsClusterSelects(table) {
       const origins = [...new Set((table?.entries || []).map((e) => e.origin).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru'));
       const dests = [...new Set((table?.entries || []).map((e) => e.dest).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru'));
+      state.logisticsDestList = dests.length ? dests : origins;
       fillClusterSelect($('fbsOrigin'), origins.length ? origins : (table?.origins || []), LS_FBS_ORIGIN);
-      fillClusterSelect($('logisticsDest'), dests.length ? dests : origins, LS_LOGISTICS_DEST);
+      fillDestClusterSelect($('logisticsDest'), state.logisticsDestList);
       const legacyDest = localStorage.getItem(LS_FBO_DEST);
       if (legacyDest && !$('logisticsDest').value) {
         const match = [...$('logisticsDest').options].find((o) => clusterMatches(o.value, legacyDest));
@@ -1990,29 +2029,17 @@
 
     function updateSchemeUi() {
       $('logisticsSettings')?.classList.toggle('hidden', !state.logisticsReady);
-      updateFboMarkupUi();
+      updateFboRouteUi();
     }
-    function updateFboMarkupUi() {
-      const showNote = state.scheme === 'FBO' && fboApplyMarkup();
-      $('fboMarkupNote')?.classList.toggle('hidden', !showNote);
-    }
-    function syncSameClusterDest() {
+    function updateFboRouteUi() {
       const origin = $('fbsOrigin')?.value;
-      if (!origin || !$('logisticsDest')) return;
-      for (const opt of $('logisticsDest').options) {
-        if (clusterMatches(opt.value, origin)) {
-          $('logisticsDest').value = opt.value;
-          localStorage.setItem(LS_LOGISTICS_DEST, opt.value);
-          break;
-        }
+      const dest = $('logisticsDest')?.value;
+      const crossCluster = !!(origin && dest && !clusterMatches(origin, dest));
+      $('fboClusterWrap')?.classList.toggle('hidden', !crossCluster);
+      const pctHint = $('fboMarkupPctHint');
+      if (pctHint) {
+        pctHint.textContent = crossCluster ? '(+' + fboMarkupPct(dest) + '%)' : '';
       }
-    }
-    function refreshSameClusterCheckbox() {
-      const cb = $('fboSameCluster');
-      if (!cb) return;
-      const same = clustersSameRoute();
-      cb.checked = same;
-      localStorage.setItem(LS_FBO_SAME_CLUSTER, same ? '1' : '0');
     }
     function syncCalcTariff() {
       const p = payload();
@@ -2185,7 +2212,7 @@
         setLogisticsHint(state.logisticsError || 'Таблица логистики не загружена.');
       }
       updateSchemeUi();
-      refreshSameClusterCheckbox();
+      updateFboRouteUi();
       await applyLogisticsRecalc();
     }
 
@@ -3431,9 +3458,8 @@
       }
       $('fbsOrigin')?.addEventListener('change', () => {
         localStorage.setItem(LS_FBS_ORIGIN, $('fbsOrigin').value);
-        if ($('fboSameCluster')?.checked) syncSameClusterDest();
-        refreshSameClusterCheckbox();
-        updateFboMarkupUi();
+        refreshDestClusterLabels();
+        updateFboRouteUi();
         applyLogisticsRecalcNow();
       });
       $('fbsDropOff')?.addEventListener('change', () => {
@@ -3443,23 +3469,12 @@
       $('logisticsDest')?.addEventListener('change', () => {
         localStorage.setItem(LS_LOGISTICS_DEST, $('logisticsDest').value);
         localStorage.setItem(LS_FBO_DEST, $('logisticsDest').value);
-        refreshSameClusterCheckbox();
-        updateFboMarkupUi();
-        applyLogisticsRecalcNow();
-      });
-      $('fboSameCluster')?.addEventListener('change', () => {
-        if ($('fboSameCluster').checked) {
-          syncSameClusterDest();
-          localStorage.setItem(LS_FBO_SAME_CLUSTER, '1');
-        } else {
-          localStorage.setItem(LS_FBO_SAME_CLUSTER, '0');
-        }
-        updateFboMarkupUi();
+        updateFboRouteUi();
         applyLogisticsRecalcNow();
       });
       $('fboNonLocalMarkup')?.addEventListener('change', () => {
         localStorage.setItem(LS_FBO_NONLOCAL_MARKUP, $('fboNonLocalMarkup').checked ? '1' : '0');
-        updateFboMarkupUi();
+        updateFboRouteUi();
         applyLogisticsRecalcNow();
       });
     }
@@ -3473,9 +3488,6 @@
         $('taxSystem').value = localStorage.getItem(LS_TAX_SYSTEM) || 'income';
         $('tax').value = localStorage.getItem(LS_TAX_RATE) || ($('taxSystem').value === 'profit' ? '15' : $('taxSystem').value === 'vat' ? '20' : '6');
         $('vatRate').value = localStorage.getItem(LS_VAT_RATE) ?? '0';
-        if (localStorage.getItem(LS_FBO_SAME_CLUSTER) === '1' && $('fboSameCluster')) {
-          $('fboSameCluster').checked = true;
-        }
         if ($('fboNonLocalMarkup')) {
           $('fboNonLocalMarkup').checked = localStorage.getItem(LS_FBO_NONLOCAL_MARKUP) !== '0';
         }
@@ -3496,7 +3508,7 @@
         await verifySubscriptionOnStart();
         if (state.subscriptionBlocked) return;
         updateSchemeUi();
-        updateFboMarkupUi();
+        updateFboRouteUi();
         setScheme('FBO');
         await loadCommissionTable().catch(() => {});
         loadLogisticsTable().catch(() => {});
