@@ -496,9 +496,9 @@
           <label class="block text-sm">
             <span class="text-slate-500">Точка отгрузки</span>
             <select id="fbsDropOff" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
-              <option value="acceptance">В пункте приёма — 10–30 ₽</option>
-              <option value="pvz">ПВЗ / ППЗ — 30 ₽ + обработка 20 ₽</option>
-              <option value="sc">Сортцентр — 20 ₽ + обработка 20 ₽</option>
+              <option value="acceptance">В пункте приёма — 30 ₽</option>
+              <option value="pvz">ПВЗ / ППЗ — 30 ₽</option>
+              <option value="sc">Сортцентр — 40 ₽</option>
               <option value="pickup">Pick-up (курьеру) — 20 ₽</option>
             </select>
           </label>
@@ -799,14 +799,14 @@
     }
     function getFbsFees() {
       const mode = $('fbsDropOff')?.value || localStorage.getItem(LS_FBS_DROPOFF) || 'acceptance';
+      // Одна строка «Обработка отправления» — как в калькуляторе Ozon (без 30+20)
       if (mode === 'acceptance') {
-        // Ozon: локальный маршрут — обработка 30 ₽; межкластерный — 10 ₽ (как СПб→Саратов)
         const processing = clustersSameRoute() ? 30 : 10;
-        return { dropOff: 0, processing, label: 'В пункте приёма' };
+        return { processing, label: 'В пункте приёма' };
       }
-      if (mode === 'pickup') return { dropOff: 0, processing: 20, label: 'Pick-up' };
-      if (mode === 'sc') return { dropOff: 20, processing: 20, label: 'СЦ' };
-      return { dropOff: 30, processing: 20, label: 'ПВЗ/ППЗ' };
+      if (mode === 'pickup') return { processing: 20, label: 'Pick-up' };
+      if (mode === 'sc') return { processing: 40, label: 'Сортцентр' };
+      return { processing: 30, label: 'ПВЗ/ППЗ' };
     }
     function fboNonLocalMarkupEnabled() {
       return $('fboNonLocalMarkup')?.checked ?? localStorage.getItem(LS_FBO_NONLOCAL_MARKUP) !== '0';
@@ -1259,10 +1259,8 @@
           logisticsCore = Number(tariff.logisticsCore ?? tariff.logistics) || 0;
         }
         const fees = getFbsFees();
-        const processing = Number(fees.processing) || 0;
-        const dropOff = Number(fees.dropOff) || 0;
-        if (processing) logRows.push({ t: 'Обработка отправления FBS', v: processing });
-        if (dropOff) logRows.push({ t: 'Сдача в ' + (fees.label || 'точку отгрузки'), v: dropOff });
+        const handling = Number(fees.processing) || 0;
+        if (handling) logRows.push({ t: 'Обработка отправления FBS', v: handling });
         logRows.push({
           t: tariff.logisticsFromTable ? 'Логистика FBS (таблица)' : 'Логистика FBS (оценка)',
           v: logisticsCore,
