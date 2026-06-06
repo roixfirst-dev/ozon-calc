@@ -767,7 +767,7 @@
       logisticsTables: { FBS: null, FBO: null }, logisticsReady: false, logisticsError: '',
       categoryTypeById: new Map(),
       assortSearch: '', assortSort: 'default', dataLoading: false,
-      assortmentLoaded: false, assortmentLoading: false, assortmentDomBuilt: false, assortTabMounted: false, productListPath: '',
+      assortmentLoaded: false, assortmentLoading: false, assortmentDomBuilt: false, assortTabMounted: false, assortProductsSignature: '', productListPath: '',
       tabsVisited: {},
       subscriptionBlocked: false,
       subscription: null,
@@ -1275,7 +1275,8 @@
       const scheme = opts.scheme || 'FBO';
       const vol = opts.vol != null ? opts.vol : ceilL(opts.len, opts.wid, opts.hei);
       const tariff = opts.tariff || defaultTariff(vol, scheme, price);
-      let comm = tariff.commissionPct + (premium ? PREMIUM : 0);
+      const commBase = Number.isFinite(tariff.commissionPct) ? tariff.commissionPct : 0;
+      let comm = commBase + (premium ? PREMIUM : 0);
       const commAmt = price * (comm / 100);
       const acqAmt = price * (acqP / 100);
       const mult = locMult(loc);
@@ -1339,7 +1340,7 @@
       const margin = price > 0 ? (net / price) * 100 : 0;
       const roi = costs > 0 ? (net / costs) * 100 : null;
       const rows = [
-        { t: 'Комиссия Ozon (' + comm.toFixed(1) + '%)', v: commAmt },
+        { t: Number.isFinite(tariff.commissionPct) ? 'Комиссия Ozon (' + comm.toFixed(1) + '%)' : 'Комиссия Ozon (нет в таблице)', v: commAmt },
         { t: 'Эквайринг (' + acqP + '%)', v: acqAmt },
         ...logRows,
         { t: 'Возвраты (' + retP + '%)', v: retCost },
@@ -1353,6 +1354,7 @@
       if (scheme === 'FBO' && tariff.logisticsLabel) footNote += ' · ' + tariff.logisticsLabel;
       if (scheme === 'FBO' && tariff.fboMarkupPct > 0) footNote += ' · наценка ' + tariff.fboMarkupPct + '%';
       if (scheme === 'FBS' && !tariff.logisticsFromTable && !tariff.apiExact) footNote += ' · локализация ×' + mult.toFixed(2);
+      if (!Number.isFinite(tariff.commissionPct)) footNote += ' · комиссия не найдена в таблице 2026';
       return { net, margin, roi, rows, ded, costs, vol, mult, scheme, comm, footNote, tariff, logTotal };
     }
 
@@ -1652,8 +1654,16 @@
 
     function isMeaningfulDiscount(regular, promo) {
       if (!regular || !promo || promo >= regular) return false;
+      if (promo < regular * 0.05) return false;
       const diff = regular - promo;
       return diff >= 50 || diff / regular >= 0.03;
+    }
+
+    function actionPriceFromMarketingAction(action, regularPrice) {
+      if (!action || !regularPrice) return null;
+      const explicit = num(action.action_price, action.price);
+      if (explicit && isMeaningfulDiscount(regularPrice, explicit)) return explicit;
+      return null;
     }
 
     function productFromSelectedCategory() {
@@ -1725,8 +1735,8 @@
       const sellerAction = num(price.marketing_seller_price, row.marketing_seller_price);
 
       const actionFromList = actions
-        .map((a) => num(a.value, a.price, a.action_price))
-        .filter((n) => n != null && regularPrice && isMeaningfulDiscount(regularPrice, n));
+        .map((a) => actionPriceFromMarketingAction(a, regularPrice))
+        .filter((n) => n != null);
       const lowestAction = actionFromList.length ? Math.min(...actionFromList) : null;
 
       const basePrice =
@@ -2076,8 +2086,8 @@
       const base = buildLogisticsTariff(p.volume_liters, state.scheme, price, clustersSameRoute());
       state.tariff = {
         ...base,
-        commissionPct: tablePct ?? base.commissionPct,
-        source: tablePct != null ? 'таблица комиссий 2026' : base.source,
+        commissionPct: tablePct,
+        source: tablePct != null ? 'таблица комиссий 2026' : 'категория не в таблице',
       };
       state.tariffSource = [
         state.tariff.source,
@@ -2562,7 +2572,7 @@
       }
       return {
         ...tariff,
-        commissionPct: tablePct ?? tariff.commissionPct,
+        commissionPct: tablePct,
         source: tablePct != null ? 'таблица комиссий 2026' : tariff.source,
         reverse: apiTariff.reverse ?? fallback.reverse,
         lastMile: tariff.lastMile ?? apiTariff.lastMile ?? fallback.lastMile,
@@ -2585,12 +2595,15 @@
     }
 
     function commissionForPrice(product, scheme, price) {
-      const tablePct = commissionFromTable(product, scheme, price);
-      if (tablePct != null) return tablePct;
-      const p = Number(price) || 0;
-      if (p > 0 && p <= 100) return 14;
-      if (p > 100 && p <= 300) return 20;
-      return null;
+      return commissionFromTable(product, scheme, price);
+    }
+
+    function commissionSubLabel(product, scheme, testPrice) {
+      return commissionFromTable(product, scheme, testPrice) != null ? 'таблица 2026' : 'не в таблице';
+    }
+
+    function assortProductsSignature(products) {
+      return (products || []).map((p) => String(p.offer_id || '')).join('|');
     }
 
     function normalizeProduct(item) {
@@ -2680,14 +2693,22 @@
       }
     }
 
-    function applyAssortProducts(products, hintText) {
+    function applyAssortProducts(products, hintText, opts) {
+      const forceRender = !!(opts && opts.forceRender);
+      const nextSig = assortProductsSignature(products);
+      const sigChanged = nextSig !== (state.assortProductsSignature || '');
       state.products = products;
+      state.assortProductsSignature = nextSig;
       state.assortmentLoaded = products.length > 0;
-      state.assortmentDomBuilt = false;
+      if (sigChanged || forceRender) state.assortmentDomBuilt = false;
       if (hintText) $('assortHint').textContent = hintText;
       $('btnAssortRefresh')?.classList.toggle('hidden', !state.connected);
-      if (getActiveTabId() === 'tab-assort') renderAssortment();
-      else recalcAllAssortRowsDeferred();
+      const onAssortTab = getActiveTabId() === 'tab-assort';
+      if (onAssortTab) {
+        renderAssortment({ soft: state.assortmentDomBuilt && !sigChanged && !forceRender });
+      } else if (state.assortmentDomBuilt) {
+        recalcAllAssortRowsDeferred();
+      }
     }
 
     function setAssortRefreshing(on) {
@@ -2838,7 +2859,9 @@
       const background = !!(opts && opts.background);
       if (state.assortmentLoading && !force) return;
       if (state.connected && state.assortmentLoaded && state.products.length && !force) {
-        renderAssortment();
+        if (getActiveTabId() === 'tab-assort') {
+          renderAssortment({ soft: state.assortmentDomBuilt });
+        }
         return;
       }
       let products = [];
@@ -2983,7 +3006,8 @@
       const scheme = getRowScheme(offerId);
       const testPrice = valueOrFallback(localStorage.getItem('test_price_' + offerId), Number(document.querySelector('[data-test-price="' + offerId + '"]')?.value) || p.price);
       const r = getProductEconomics(p);
-      const commPct = commissionFromTable(p, scheme, testPrice) ?? r.tariff.commissionPct;
+      const tableMatched = commissionFromTable(p, scheme, testPrice) != null;
+      const commPct = commissionForPrice(p, scheme, testPrice);
       const profitEl = document.querySelector('[data-profit="' + offerId + '"]');
       const marginEl = document.querySelector('[data-margin="' + offerId + '"]');
       const roiEl = document.querySelector('[data-roi="' + offerId + '"]');
@@ -3003,9 +3027,9 @@
       }
       if (commEl) {
         commEl.textContent = pct(commPct);
-        commEl.className = 'font-medium ' + (commissionFromTable(p, scheme, testPrice) != null ? 'text-emerald-700' : '');
+        commEl.className = 'font-medium ' + (tableMatched ? 'text-emerald-700' : 'text-amber-700');
       }
-      if (commSub) commSub.textContent = (commissionFromTable(p, scheme, testPrice) != null ? 'таблица 2026' : 'порог / API') + ' · ' + scheme;
+      if (commSub) commSub.textContent = commissionSubLabel(p, scheme, testPrice) + ' · ' + scheme;
       if (breakdownEl) breakdownEl.innerHTML = formatBreakdownHtml(r, p);
       const volEl = document.querySelector('[data-volume="' + offerId + '"]');
       if (volEl) {
@@ -3160,8 +3184,8 @@
           '<div class="rounded-lg bg-slate-50 px-2 py-1.5" data-volume="' + escapeHtml(oid) + '"><div class="text-slate-500">Объём</div><div class="mt-0.5 font-semibold text-slate-800">' +
           (p.volume_liters != null ? p.volume_liters.toFixed(2).replace('.', ',') + ' л' : '—') + '</div></div>' +
           '<div class="rounded-lg bg-slate-50 px-2 py-1.5"><div class="text-slate-500">Комиссия</div>' +
-          '<div class="mt-0.5 font-semibold ' + (tableMatched ? 'text-emerald-700' : 'text-slate-800') + '" data-commission="' + escapeHtml(oid) + '">' + pct(tableComm ?? p.tariffs?.[scheme]?.commissionPct) + '</div>' +
-          '<div class="text-[10px] text-slate-400" data-commission-sub="' + escapeHtml(oid) + '">' + (tableMatched ? 'таблица 2026' : 'порог') + '</div></div>' +
+          '<div class="mt-0.5 font-semibold ' + (tableMatched ? 'text-emerald-700' : 'text-amber-700') + '" data-commission="' + escapeHtml(oid) + '">' + pct(tableComm) + '</div>' +
+          '<div class="text-[10px] text-slate-400" data-commission-sub="' + escapeHtml(oid) + '">' + commissionSubLabel(p, scheme, testPriceNum) + '</div></div>' +
           '</div>' +
           '<div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">' +
           '<label class="assort-field text-xs"><span class="mb-1 block text-slate-500">Себест., ₽</span><input data-cost="' + escapeHtml(oid) + '" type="number" min="0" value="' + escapeHtml(savedCost) + '" placeholder="0" inputmode="decimal" /></label>' +
@@ -3359,15 +3383,9 @@
           p.classList.remove('tab-panel--animate');
         }
       });
-      if (id === 'tab-assort') {
-        if (state.products.length && !state.dataLoading) {
-          if (!state.assortTabMounted || !state.assortmentDomBuilt) {
-            renderAssortment();
-            state.assortTabMounted = true;
-          } else {
-            renderAssortment({ soft: true });
-          }
-        }
+      if (id === 'tab-assort' && state.products.length && !state.dataLoading) {
+        renderAssortment({ soft: state.assortmentDomBuilt });
+        state.assortTabMounted = true;
       }
     }
 
