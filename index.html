@@ -3471,7 +3471,7 @@
       closeCatCombo();
       try {
         sessionStorage.setItem(LS_ACTIVE_TAB, id);
-        if (location.hash !== '#' + id) history.replaceState(null, '', '#' + id);
+        // history.replaceState removed — causes TWA reload in Telegram
       } catch (_) { /* ignore */ }
       document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === id));
       document.querySelectorAll('.tab-panel').forEach((p) => {
