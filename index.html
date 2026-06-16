@@ -727,6 +727,13 @@
 
     <section id="tab-assort" class="tab-panel">
       <div class="fs-panel p-4 sm:p-6">
+        <div class="mb-4 flex items-start gap-2.5 rounded-xl px-3.5 py-3" style="background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.2)">
+          <svg class="mt-0.5 h-4 w-4 shrink-0" style="color:#c4b5fd" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <p class="text-xs leading-relaxed" style="color:#ddd6fe">
+            <strong>Сначала настройте Калькулятор под себя.</strong> ДРР, налоговая ставка, система налогообложения и прочие расходы для всех товаров берутся из вкладки
+            <button type="button" id="btnGoToCalc" class="font-semibold underline underline-offset-2" style="color:#e9d5ff">Быстрый калькулятор</button>.
+          </p>
+        </div>
         <p class="mb-4 text-xs text-slate-500">Маршрут «отгрузка → доставка» задаётся в блоке выше. Галочка «Локальная доставка» у товара — заказ в том же кластере, что отгрузка (минимальный тариф).</p>
         <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
           <h2 class="fs-panel-title">Ассортимент</h2>
@@ -3583,10 +3590,13 @@
       document.querySelectorAll('.scheme-btn').forEach((b) => b.addEventListener('click', () => setScheme(b.dataset.scheme)));
       $('btnConnect').addEventListener('click', connect);
       $('btnApiSettings').addEventListener('click', () => setAuthPanelVisible(true));
+      let searchTimer = null;
       $('assortSearch').addEventListener('input', (e) => {
         state.assortSearch = e.target.value;
-        renderAssortment();
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => renderAssortment(), 300);
       });
+      $('btnGoToCalc')?.addEventListener('click', () => switchTab('tab-calc'));
       const assortSortEl = $('assortSort');
       if (assortSortEl) {
         const savedSort = localStorage.getItem(LS_ASSORT_SORT);
