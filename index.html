@@ -1599,7 +1599,16 @@
     function initCommissionCategoriesFromTable() {
       const types = buildCategoryTypesFromCommissionTable();
       if (!types.length) return;
-      state.categoryTypes = types;
+      // If category tree with real Ozon IDs is already loaded, merge instead of overwriting
+      const hasRealIds = state.categoryTypes.some((t) => t.description_category_id > 0);
+      if (hasRealIds) {
+        const map = new Map();
+        types.forEach((t) => map.set(t.label, t));
+        state.categoryTypes.forEach((t) => map.set(t.label, t)); // real IDs win
+        state.categoryTypes = [...map.values()].sort((a, b) => a.label.localeCompare(b.label, 'ru'));
+      } else {
+        state.categoryTypes = types;
+      }
       initCategoryCombobox();
     }
     function onCommissionTableReady() {
@@ -2407,8 +2416,19 @@
       if (!table || !product) return null;
       const band = priceBandIndex(table, price);
       const schemeKey = scheme === 'FBS' ? 'FBS' : scheme === 'RFBS' ? 'RFBS' : 'FBO';
-      const category = normalizeText(product.commissionCategory || product.categoryName || '');
-      const type = normalizeText(product.commissionType || product.typeName || '');
+      // Fallback: if commissionCategory is empty, try live lookup by numeric IDs
+      let commCat = product.commissionCategory || product.categoryName || '';
+      let commType = product.commissionType || product.typeName || '';
+      if ((!commCat || !commType) && product.categoryId != null && product.typeId != null) {
+        const live = state.categoryTypeById.get(String(product.categoryId) + ':' + String(product.typeId));
+        if (live?.label) {
+          const parts = live.label.split(' › ');
+          commCat = commCat || parts[0] || '';
+          commType = commType || parts[parts.length - 1] || '';
+        }
+      }
+      const category = normalizeText(commCat);
+      const type = normalizeText(commType);
       const candidates = [];
       if (category && type) candidates.push(category + '|' + type);
       if (type) candidates.push('*|' + type);
