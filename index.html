@@ -2378,6 +2378,10 @@
       const nums = [...String(text).matchAll(/(\d[\d\s]*(?:[.,]\d+)?)/g)]
         .map((m) => parseFloat(m[1].replace(/\s/g, '').replace(',', '.')))
         .filter(Number.isFinite);
+      // "свыше X до Y" — range band (must check before plain "свыше")
+      if (s.includes('свыше') && s.includes('до') && nums.length >= 2) {
+        return { min: nums[0], max: nums[1] };
+      }
       if (s.includes('свыше') || s.includes('более') || />\s*\d/.test(s)) {
         return { min: nums[0] || 10000.01, max: Infinity };
       }
@@ -2464,74 +2468,79 @@
     }
 
     function parseCommissionRows(rows) {
-      const headerRow = rows.findIndex((r) => {
-        const c0 = normalizeText(r[0]);
-        const c1 = normalizeText(r[1]);
-        return c0.includes('категор') && (c1.includes('тип') || c1.includes('наимен'));
-      });
+      // Detect header row — supports old format (Категория | Тип) and new format (Основная категория | Категория | Тип)
+      let headerRow = -1, catCol = 0, typeCol = 1, dataStart = 2;
+      for (let i = 0; i < Math.min(rows.length, 6); i++) {
+        const c0 = normalizeText(rows[i][0]);
+        const c1 = normalizeText(rows[i][1]);
+        const c2 = normalizeText(rows[i][2] || '');
+        if (c0.includes('категор') && (c1.includes('тип') || c1.includes('наимен'))) {
+          headerRow = i; catCol = 0; typeCol = 1; dataStart = 2; break;
+        }
+        if (c0.includes('категор') && c1.includes('категор') && c2.includes('тип')) {
+          headerRow = i; catCol = 1; typeCol = 2; dataStart = 3; break;
+        }
+      }
       if (headerRow < 0) throw new Error('Не нашёл колонки "Категория" и "Тип товара" в таблице комиссий');
 
       const headerCells = rows[headerRow] || [];
-      const SCHEME_BLOCKS = ['FBO', 'FBO_FRESH', 'FBS', 'RFBS'];
-      const BAND_COUNT = 6;
-      const bands = [];
-      for (let b = 0; b < BAND_COUNT; b++) {
-        const band = parseBandFromHeader(headerCells[2 + b]);
-        if (band) bands.push(band);
-      }
-      const finalBands = bands.length >= 4 ? bands : DEFAULT_PRICE_BANDS;
-      const colScheme = [];
-      SCHEME_BLOCKS.forEach((scheme, blockIdx) => {
-        const start = 2 + blockIdx * BAND_COUNT;
-        for (let b = 0; b < BAND_COUNT; b++) {
-          colScheme.push({ col: start + b, scheme, bandIndex: b });
+      const totalCols = headerCells.length;
+
+      // Build col→scheme by propagating scheme labels from rows above the header
+      const colToScheme = [];
+      let lastScheme = 'FBO';
+      for (let col = dataStart; col < totalCols; col++) {
+        for (let r = headerRow - 1; r >= Math.max(0, headerRow - 3); r--) {
+          const label = normalizeText(rows[r]?.[col] || '');
+          if (!label) continue;
+          if (label.includes('fbo') && (label.includes('fresh') || label.includes('фреш'))) { lastScheme = 'FBO_FRESH'; break; }
+          if (label.includes('rfbs')) { lastScheme = 'RFBS'; break; }
+          if (label.includes('fbs')) { lastScheme = 'FBS'; break; }
+          if (label.includes('fbo')) { lastScheme = 'FBO'; break; }
         }
-      });
+        colToScheme[col] = lastScheme;
+      }
+
+      // Detect price bands from FBO columns in the header row
+      const fboCols = [];
+      for (let col = dataStart; col < totalCols; col++) {
+        if (colToScheme[col] === 'FBO') fboCols.push(col);
+        else if (fboCols.length) break;
+      }
+      const detectedBands = fboCols.map((col) => parseBandFromHeader(headerCells[col])).filter(Boolean);
+      const finalBands = detectedBands.length >= 2 ? detectedBands : DEFAULT_PRICE_BANDS;
+
+      // Build colScheme with band indices per scheme
+      const schemeColCount = {};
+      const colScheme = [];
+      for (let col = dataStart; col < totalCols; col++) {
+        const scheme = colToScheme[col];
+        if (!scheme) continue;
+        const bandIndex = schemeColCount[scheme] || 0;
+        schemeColCount[scheme] = bandIndex + 1;
+        colScheme.push({ col, scheme, bandIndex });
+      }
 
       const start = headerRow + 1;
-      const table = {
-        rows: {},
-        count: 0,
-        loadedAt: new Date().toISOString(),
-        source: 'unknown',
-        bands: finalBands,
-        version: 2,
-      };
+      const table = { rows: {}, count: 0, loadedAt: new Date().toISOString(), source: 'unknown', bands: finalBands, version: 2 };
 
       for (let i = start; i < rows.length; i++) {
         const row = rows[i];
-        const categoryRaw = row[0];
-        const typeRaw = row[1];
+        const categoryRaw = row[catCol];
+        const typeRaw = row[typeCol];
         const category = normalizeText(categoryRaw);
         const type = normalizeText(typeRaw);
         if (!category || !type || category.includes('итог')) continue;
 
-        const entry = {
-          category: String(categoryRaw),
-          type: String(typeRaw),
-          FBO: [],
-          FBO_FRESH: [],
-          FBS: [],
-          RFBS: [],
-        };
+        const entry = { category: String(categoryRaw), type: String(typeRaw), FBO: [], FBO_FRESH: [], FBS: [], RFBS: [] };
+        colScheme.forEach(({ col, scheme, bandIndex }) => {
+          const pct = parsePercentCell(row[col]);
+          if (!Number.isFinite(pct)) return;
+          if (!entry[scheme]) entry[scheme] = [];
+          entry[scheme][bandIndex] = pct;
+        });
 
-        if (colScheme.length) {
-          colScheme.forEach(({ col, scheme, bandIndex }) => {
-            const pct = parsePercentCell(row[col]);
-            if (!Number.isFinite(pct)) return;
-            if (!entry[scheme]) entry[scheme] = [];
-            entry[scheme][bandIndex] = pct;
-          });
-        } else {
-          entry.FBO = row.slice(2, 8).map(parsePercentCell);
-          entry.FBO_FRESH = row.slice(8, 14).map(parsePercentCell);
-          entry.FBS = row.slice(14, 20).map(parsePercentCell);
-          entry.RFBS = row.slice(20, 26).map(parsePercentCell);
-        }
-
-        if (!entry.FBO.some(Number.isFinite) && !entry.FBS.some(Number.isFinite) && !entry.RFBS.some(Number.isFinite)) {
-          continue;
-        }
+        if (!entry.FBO.some(Number.isFinite) && !entry.FBS.some(Number.isFinite) && !entry.RFBS.some(Number.isFinite)) continue;
         table.rows[category + '|' + type] = entry;
         if (!table.rows['*|' + type]) table.rows['*|' + type] = entry;
         table.count++;
