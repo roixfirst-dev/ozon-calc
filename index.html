@@ -2463,8 +2463,13 @@
 
     function parsePercentCell(value) {
       if (value == null || value === '') return null;
-      const n = Number(String(value).replace('%', '').replace(',', '.').trim());
-      return Number.isFinite(n) ? n : null;
+      const s = String(value).replace(',', '.').trim();
+      const hasPct = s.includes('%');
+      const n = Number(s.replace('%', ''));
+      if (!Number.isFinite(n)) return null;
+      // Values like 0.14 are decimal fractions (14%) — convert to whole percent
+      // "14%" stays 14; 0.14 → 14; 14 stays 14
+      return hasPct ? n : (n > 0 && n < 1 ? n * 100 : n);
     }
 
     function parseCommissionRows(rows) {
