@@ -2501,6 +2501,19 @@
         colToScheme[col] = lastScheme;
       }
 
+      // Fallback: if no scheme labels found above header, use old fixed-column layout
+      // Old format: Категория|Тип|FBO×6|FBO_FRESH×6|FBS×6|RFBS×4 (starting at col 2)
+      const hasMultipleSchemes = colToScheme.some((s) => s && s !== 'FBO');
+      if (!hasMultipleSchemes) {
+        const SCHEME_BLOCKS = ['FBO', 'FBO_FRESH', 'FBS', 'RFBS'];
+        const BAND_COUNT_FIXED = 6;
+        for (let bi = 0; bi < SCHEME_BLOCKS.length; bi++) {
+          for (let b = 0; b < BAND_COUNT_FIXED; b++) {
+            colToScheme[dataStart + bi * BAND_COUNT_FIXED + b] = SCHEME_BLOCKS[bi];
+          }
+        }
+      }
+
       // Detect price bands from FBO columns in the header row
       const fboCols = [];
       for (let col = dataStart; col < totalCols; col++) {
